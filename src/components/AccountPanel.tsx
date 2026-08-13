@@ -1,15 +1,8 @@
-import { useState, type FormEvent } from "react";
-import { CheckCircle2, CloudOff, LogOut, Mail, ShieldCheck, UserRound } from "lucide-react";
+import { CheckCircle2, CloudOff, LogOut, ShieldCheck, UserRound } from "lucide-react";
 import type { AccountConnectionsModel } from "../hooks/use-account-connections";
 
-export function AccountPanel({ model }: { model: AccountConnectionsModel }) {
-  const [email, setEmail] = useState("");
+export function AccountPanel({ model, openSignIn }: { model: AccountConnectionsModel; openSignIn: () => void }) {
   const account = model.snapshot.account;
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    await model.signIn(email);
-  }
 
   return (
     <>
@@ -21,7 +14,7 @@ export function AccountPanel({ model }: { model: AccountConnectionsModel }) {
           <section className="account-card">
             <span className="account-avatar"><UserRound size={22} /></span>
             <div>
-              <span className="status-chip">{account.mode === "preview" ? "LOCAL PREVIEW" : "SIGNED IN"}</span>
+              <span className="status-chip">{account.mode === "device" ? "ON THIS DEVICE" : "SIGNED IN"}</span>
               <h3>{account.displayName}</h3>
               <p>{account.email}</p>
             </div>
@@ -32,10 +25,10 @@ export function AccountPanel({ model }: { model: AccountConnectionsModel }) {
               <input
                 type="checkbox"
                 checked={model.snapshot.syncEnabled}
-                disabled={Boolean(model.busy)}
+                disabled={Boolean(model.busy) || model.mode === "device"}
                 onChange={(event) => void model.setSyncEnabled(event.target.checked)}
               />
-              <span>{model.snapshot.syncEnabled ? "Enabled" : "Off"}</span>
+              <span>{model.mode === "device" ? "Cloud required" : model.snapshot.syncEnabled ? "Enabled" : "Off"}</span>
             </label>
           </section>
           <section className="panel-section account-facts">
@@ -51,14 +44,7 @@ export function AccountPanel({ model }: { model: AccountConnectionsModel }) {
             <h3>Keep creating without an account.</h3>
             <p>Sign in only when you want optional sync, a ChatGPT/Codex plugin connection, or an encrypted API-key vault.</p>
           </section>
-          <form className="sign-in-form" onSubmit={(event) => void submit(event)}>
-            <label htmlFor="account-email">Email address</label>
-            <div><Mail size={16} /><input id="account-email" type="email" autoComplete="email" required placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} /></div>
-            <button disabled={model.busy === "sign-in"}>{model.mode === "local-preview" ? "Preview sign in" : "Email me a sign-in link"}</button>
-          </form>
-          {model.mode === "local-preview" && (
-            <div className="preview-disclosure"><strong>Local development preview</strong><p>This exercises the account and connection interface on this device. It sends no email, creates no remote account, and cannot access OpenAI.</p></div>
-          )}
+          <button className="account-sign-in-button" onClick={openSignIn}>Sign in to ImageStitch</button>
         </>
       )}
       {(model.notice || model.error) && (

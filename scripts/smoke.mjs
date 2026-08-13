@@ -92,6 +92,18 @@ try {
   assert(!visualSystem.headingFont.toLowerCase().includes("georgia"), "Interface headings should use sans-serif typography");
   await page.getByRole("button", { name: "Layers" }).click();
   assert(await page.locator(".layer-row").count() === 3, "Starter project should have three layers");
+  const captionRow = page.locator(".layer-row").filter({ hasText: "Caption" });
+  await page.getByRole("button", { name: "Drag Headline to reorder" }).dragTo(captionRow, { targetPosition: { x: 80, y: 2 } });
+  assert((await page.locator(".layer-row").first().innerText()).includes("Headline"), "Dragging a layer should move it to the chosen z-order position");
+  await page.getByRole("button", { name: "Undo" }).click();
+  assert((await page.locator(".layer-row").first().innerText()).includes("Caption"), "Layer drag reordering should be undoable");
+  await page.getByRole("button", { name: "Redo" }).click();
+  assert((await page.locator(".layer-row").first().innerText()).includes("Headline"), "Layer drag reordering should be redoable");
+  await page.getByRole("button", { name: "3D layer depth" }).click();
+  assert(await page.locator(".depth-plane").count() === 3, "3D layer mode should expose one depth plane per object");
+  assert((await page.locator(".depth-plane").first().innerText()).includes("Z03"), "The front layer should carry the highest visible z-index");
+  await page.screenshot({ path: "artifacts/layer-depth-smoke.png", fullPage: true });
+  await page.getByRole("button", { name: "Layer list" }).click();
 
   await page.getByRole("button", { name: "Shapes" }).click();
   assert(await page.locator(".shape-library button").count() === 12, "The shape library should expose twelve starter shapes");
@@ -223,23 +235,27 @@ try {
   assert(projectBundle.project.objects.find((object) => object.text === "Inline canvas headline"), "Portable projects should retain inline canvas text edits");
 
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await page.getByLabel("Email address").fill("mom.example@example.com");
-  await page.getByRole("button", { name: "Preview sign in" }).click();
-  await page.getByText("Preview account ready for mom.example@example.com.").waitFor();
-  assert(await page.getByRole("button", { name: "Mom Example", exact: true }).isVisible(), "Preview sign-in should update the account control");
+  const signInDialog = page.getByRole("dialog", { name: "Make this editor yours" });
+  await signInDialog.waitFor();
+  await page.screenshot({ path: "artifacts/sign-in-modal-smoke.png", fullPage: true });
+  await signInDialog.getByLabel("Email address").fill("mom.example@example.com");
+  await signInDialog.getByRole("button", { name: "Continue on this device" }).click();
+  await signInDialog.waitFor({ state: "detached" });
+  assert(await page.getByRole("button", { name: "Mom Example", exact: true }).isVisible(), "The modal should establish the device profile and update the account control");
   await page.getByRole("button", { name: "Ask AI" }).click();
   const subscriptionCard = page.locator(".connection-card").filter({ hasText: "ChatGPT / Codex" });
-  await subscriptionCard.getByRole("button", { name: "Preview connection" }).click();
-  await subscriptionCard.getByText("Preview connected").waitFor();
+  assert(await subscriptionCard.getByRole("button", { name: "Cloud connection required" }).isDisabled(), "Provider connections should not be faked without the cloud account service");
   assert(await page.locator('input[type="password"]').count() === 0, "The editor must not expose a provider credential input");
   assert(await page.getByText("key never enters this browser UI").isVisible(), "The API connection should disclose its credential boundary");
+  assert(!(await page.locator("body").innerText()).includes("Preview"), "Account surfaces should not use prototype preview language");
 
   await page.reload({ waitUntil: "networkidle" });
+  assert(await page.getByRole("button", { name: "Mom Example", exact: true }).isVisible(), "The device profile should survive reload");
   await page.getByRole("button", { name: "Ask AI" }).click();
-  await page.locator(".connection-card").filter({ hasText: "ChatGPT / Codex" }).getByText("Preview connected").waitFor();
+  assert(await page.locator(".connection-card").filter({ hasText: "ChatGPT / Codex" }).getByRole("button", { name: "Cloud connection required" }).isDisabled(), "Reload should preserve the honest provider boundary");
   await page.screenshot({ path: "artifacts/account-ai-connections-smoke.png", fullPage: true });
   assert(browserErrors.length === 0, `Browser emitted errors:\n${browserErrors.join("\n")}`);
-  process.stdout.write("ImageStitch browser smoke passed: inline text, font picker, transactional colors, wheel zoom, layers, open image search, persistence, exports, account preview, and AI receipts.\n");
+  process.stdout.write("ImageStitch browser smoke passed: draggable and 3D layers, modal sign-in, device profile, inline text, fonts, colors, wheel zoom, open images, persistence, exports, and honest AI boundaries.\n");
 } finally {
   await browser?.close();
   server.kill("SIGTERM");

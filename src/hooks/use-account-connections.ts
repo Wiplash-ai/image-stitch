@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createAccountServiceClient,
-  createLocalPreviewAccountClient,
+  createDeviceAccountClient,
+  type MagicLinkReceipt,
   type AccountSnapshot,
   type AiConnectionKind,
 } from "../lib/account-connections";
@@ -16,13 +17,13 @@ function currentReturnUrl(): string {
 }
 
 export interface AccountConnectionsModel {
-  mode: "service" | "local-preview";
+  mode: "service" | "device";
   snapshot: AccountSnapshot;
   loading: boolean;
   busy: string | null;
   notice: string;
   error: string;
-  signIn(email: string): Promise<void>;
+  signIn(email: string): Promise<MagicLinkReceipt["status"] | null>;
   signOut(): Promise<void>;
   connect(kind: AiConnectionKind, projectId: string): Promise<void>;
   disconnect(connectionId: string): Promise<void>;
@@ -37,12 +38,12 @@ export function useAccountConnections(): AccountConnectionsModel {
       return {
         client: configuredBaseUrl
           ? createAccountServiceClient({ baseUrl: configuredBaseUrl })
-          : createLocalPreviewAccountClient(),
+          : createDeviceAccountClient(),
         configurationError: "",
       };
     } catch (cause) {
       return {
-        client: createLocalPreviewAccountClient(),
+        client: createDeviceAccountClient(),
         configurationError: cause instanceof Error ? cause.message : "The account service configuration is invalid.",
       };
     }
@@ -91,11 +92,12 @@ export function useAccountConnections(): AccountConnectionsModel {
 
   const signIn = useCallback(async (email: string) => {
     const receipt = await run("sign-in", () => client.requestMagicLink(email, currentReturnUrl()));
-    if (!receipt) return;
+    if (!receipt) return null;
     if (receipt.snapshot) setSnapshot(receipt.snapshot);
     setNotice(receipt.status === "email-sent"
       ? `Sign-in link sent to ${receipt.email}.`
-      : `Preview account ready for ${receipt.email}. No email or remote account was created.`);
+      : `ImageStitch is ready for ${receipt.email} on this device.`);
+    return receipt.status;
   }, [client, run]);
 
   const signOut = useCallback(async () => {
@@ -112,9 +114,7 @@ export function useAccountConnections(): AccountConnectionsModel {
       return;
     }
     if (authorization.snapshot) setSnapshot(authorization.snapshot);
-    setNotice(client.mode === "local-preview"
-      ? "Preview connection added. No OpenAI account, subscription, or API key was contacted."
-      : "AI connection established.");
+    setNotice("AI connection established.");
   }, [client, run]);
 
   const disconnect = useCallback(async (connectionId: string) => {

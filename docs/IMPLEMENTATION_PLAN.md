@@ -32,7 +32,7 @@ captures a visible tab, and loads that capture into its bundled editor.
 
 - [x] IndexedDB project/asset stores and recent-project switching.
 - [x] Snapshot undo/redo history and autosave/recovery receipts.
-- [x] Layer panel: reorder, rename, duplicate, lock, and hide.
+- [x] Layer panel: drag reorder, 3D depth view, rename, duplicate, lock, and hide.
 - [ ] Grouping and multi-select.
 - [x] Core keyboard shortcuts, paste, and drop.
 - [x] Alignment guides, object/artboard snapping, and user-controlled zoom.
@@ -71,8 +71,9 @@ under five minutes.
 
 ### Phase 3 — reviewable AI
 
-- [x] Optional account shell and separate ChatGPT/Codex versus OpenAI API
-  connection states, backed by a public private-service client contract.
+- [x] Modal account entry, honest device-profile fallback, and separate
+  ChatGPT/Codex versus OpenAI API connection states backed by a public
+  private-service client contract.
 - `imagestitch.edit-plan.v1` validator and selective plan review UI.
 - MCP tools for inspecting projects, adding assets, proposing edits, applying
   approved operations, and exporting approved revisions.

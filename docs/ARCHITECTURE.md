@@ -141,18 +141,19 @@ and every plan binds to an immutable base revision.
   source quality and editability. Persisting Konva filter JSON would couple the
   public contract to one rendering engine.
 
-### ADR-006: optional account client with explicit preview mode
+### ADR-006: optional account service with an honest device-profile fallback
 
 - **Status:** Accepted.
 - **Decision:** Keep normal editing accountless. The public client exposes one
-  account/connection interface with a visibly labeled local preview adapter and
-  an HTTPS private-service adapter. Production sessions use HTTP-only cookies,
-  mutating requests use CSRF receipts, and connection responses contain opaque
-  identifiers rather than provider credentials.
-- **Consequences:** Account and connection UX can be dogfooded before private
-  infrastructure exists. Preview state must never be described as real login,
-  sync remains off by default, and extension identity needs a future device-link
-  flow rather than broad host permissions.
+  account/connection interface with a browser-bound device-profile adapter and
+  an HTTPS private-service adapter. Sign-in entry lives in a modal. Production
+  sessions use HTTP-only cookies, mutating requests use CSRF receipts, and
+  connection responses contain opaque identifiers rather than provider
+  credentials.
+- **Consequences:** Personalization works before private infrastructure is
+  configured, but device mode does not claim cloud authentication and cannot
+  fake sync or provider authorization. Extension identity still needs a future
+  device-link flow rather than broad host permissions.
 
 ### ADR-007: Openverse adapter for openly licensed image search
 

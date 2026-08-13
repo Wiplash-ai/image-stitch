@@ -25,8 +25,9 @@ Pre-alpha with a dependable local editing slice:
 - Durable creator, source, license, and attribution receipts for searched image
   assets, included in portable project bundles.
 - Square, portrait, story, and landscape presets.
-- Photoshop/GIMP-inspired layer stack with visibility, lock, reorder,
-  duplicate, create, delete, rename, and object inspector controls.
+- Photoshop/GIMP-inspired layer stack with drag-and-drop ordering, an exploded
+  3D z-index view, visibility, lock, duplicate, create, delete, rename, and
+  object inspector controls.
 - Snapshot undo/redo, keyboard nudging/shortcuts, and visible autosave receipts.
 - IndexedDB projects and original image blobs with reload recovery.
 - Non-destructive centered crops, photo presets, brightness, contrast,
@@ -37,8 +38,9 @@ Pre-alpha with a dependable local editing slice:
   zoom controls.
 - Full-size PNG, JPEG, and WebP exports plus portable project import/export.
 - Public project, portable bundle, and AI edit-plan schemas.
-- Optional account shell with a visibly local-only preview adapter and a secure
-  cookie/CSRF client contract for the future private account service.
+- Modal account entry with a useful on-device profile fallback and a secure
+  cookie/CSRF client contract for the private account service. Provider
+  connections never pretend to succeed when that service is unavailable.
 - Separate ChatGPT/Codex plugin and OpenAI API connection states, with opaque
   receipts and no provider-secret input in browser or extension code.
 - Manifest V3 extension with visible-page capture and a packaged copy of the

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Konva from "konva";
 import {
   Bold,
+  Box,
   BringToFront,
   AlignCenter,
   AlignLeft,
@@ -15,9 +16,11 @@ import {
   ExternalLink,
   FilePlus2,
   FolderOpen,
+  GripVertical,
   ImagePlus,
   Italic,
   Layers3,
+  List,
   Lock,
   LoaderCircle,
   MousePointer2,
@@ -88,6 +91,7 @@ import { buildProjectBundle, downloadTextFile, readProjectBundle, safeFilename }
 import { PHOTO_PRESETS, centerCropForAspect, fitDisplayBoxToAspect, type PhotoPreset } from "./lib/image-edits";
 import { AccountPanel } from "./components/AccountPanel";
 import { AiConnectionsPanel } from "./components/AiConnectionsPanel";
+import { SignInModal } from "./components/SignInModal";
 import { useAccountConnections } from "./hooks/use-account-connections";
 import {
   downloadOpenverseImage,
@@ -128,6 +132,8 @@ type TextPreset = "heading" | "subheading" | "body";
 
 type SaveState = "saving" | "saved" | "error";
 type ToolName = "Select" | "Images" | "Text" | "Shapes" | "Layers" | "Files" | "AI" | "Account";
+type LayerView = "list" | "depth";
+type LayerDropTarget = { id: string; edge: "before" | "after" };
 
 function App() {
   const [project, setProject] = useState<ImageStitchProject | null>(null);
@@ -185,6 +191,10 @@ function Editor({
   const [selectedAssetSource, setSelectedAssetSource] = useState<AssetSource | null>(null);
   const [fontAssets, setFontAssets] = useState<StoredFontAsset[]>([]);
   const [fontLoading, setFontLoading] = useState<string | null>(null);
+  const [layerView, setLayerView] = useState<LayerView>("list");
+  const [draggedLayerId, setDraggedLayerId] = useState<string | null>(null);
+  const [layerDropTarget, setLayerDropTarget] = useState<LayerDropTarget | null>(null);
+  const [signInOpen, setSignInOpen] = useState(false);
   const accountConnections = useAccountConnections();
   const selectedObject = project.objects.find((object) => object.id === selectedId) ?? null;
   const selectedAssetId = selectedObject?.kind === "image" ? selectedObject.assetId : null;
@@ -932,6 +942,53 @@ function Editor({
     void persist(next);
   }
 
+  function reorderLayerByDrop(sourceId: string, targetId: string, edge: LayerDropTarget["edge"]) {
+    if (sourceId === targetId) return;
+    const current = projectRef.current;
+    const visualOrder = [...current.objects].reverse();
+    const sourceIndex = visualOrder.findIndex((object) => object.id === sourceId);
+    if (sourceIndex === -1) return;
+    const [source] = visualOrder.splice(sourceIndex, 1);
+    const targetIndex = visualOrder.findIndex((object) => object.id === targetId);
+    if (targetIndex === -1) return;
+    visualOrder.splice(targetIndex + (edge === "after" ? 1 : 0), 0, source);
+    const objects = visualOrder.reverse().map((object) => ({ ...object }));
+    if (objects.every((object, index) => object.id === current.objects[index]?.id)) return;
+    const next = commitSnapshot(current, "Layer order changed", { canvas: current.canvas, objects });
+    setCurrentProject(next);
+    setLayerDropTarget(null);
+    setDraggedLayerId(null);
+    void renderProject(next, sourceId);
+    void persist(next);
+  }
+
+  function layerDragStart(event: React.DragEvent, designId: string) {
+    setDraggedLayerId(designId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", designId);
+  }
+
+  function layerDragOver(event: React.DragEvent, targetId: string) {
+    if (!draggedLayerId || draggedLayerId === targetId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const edge = event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+    setLayerDropTarget((current) => current?.id === targetId && current.edge === edge ? current : { id: targetId, edge });
+  }
+
+  function layerDrop(event: React.DragEvent, targetId: string) {
+    event.preventDefault();
+    const sourceId = event.dataTransfer.getData("text/plain") || draggedLayerId;
+    const edge = layerDropTarget?.id === targetId ? layerDropTarget.edge : "before";
+    if (sourceId) reorderLayerByDrop(sourceId, targetId, edge);
+  }
+
+  function finishLayerDrag() {
+    setDraggedLayerId(null);
+    setLayerDropTarget(null);
+  }
+
   function duplicateSelected() {
     const currentSelectedId = selectedNodeRef.current?.getAttr("designId") as string | undefined;
     if (!currentSelectedId) return;
@@ -1054,19 +1111,67 @@ function Editor({
     if (activeTool === "Layers") {
       return (
         <div className="layers-panel">
-          <div className="panel-heading"><p>DOCUMENT STACK</p><h1>Layers</h1></div>
-          <div className="layer-list">
-            {[...project.objects].reverse().map((object) => (
-              <div className={`layer-row ${selectedId === object.id ? "selected" : ""}`} key={object.id}>
-                <button className="layer-icon-button" title={object.visible ? "Hide layer" : "Show layer"} aria-label={object.visible ? "Hide layer" : "Show layer"} onClick={() => toggleVisibility(object.id)}>{object.visible ? <Eye size={15} /> : <EyeOff size={15} />}</button>
-                <button className="layer-main" title={`Select ${object.name}`} onClick={() => selectById(object.id)}>
-                  <span className={`layer-thumbnail kind-${object.kind}`}>{object.kind === "text" ? <Type size={18} /> : object.kind === "image" ? <ImagePlus size={17} /> : <Shapes size={17} />}</span>
-                  <span><strong>{object.name}</strong><small>{object.kind}</small></span>
-                </button>
-                <button className="layer-icon-button" title={object.locked ? "Unlock layer" : "Lock layer"} aria-label={object.locked ? "Unlock layer" : "Lock layer"} onClick={() => toggleLock(object.id)}>{object.locked ? <Lock size={14} /> : <Unlock size={14} />}</button>
-              </div>
-            ))}
+          <div className="panel-heading layer-heading">
+            <div><p>DOCUMENT STACK</p><h1>Layers</h1></div>
+            <div className="layer-view-switch" aria-label="Layer view">
+              <button className={layerView === "list" ? "active" : ""} title="Layer list" aria-label="Layer list" onClick={() => setLayerView("list")}><List size={15} /></button>
+              <button className={layerView === "depth" ? "active" : ""} title="3D layer depth" aria-label="3D layer depth" onClick={() => setLayerView("depth")}><Box size={15} /></button>
+            </div>
           </div>
+          {layerView === "list" ? (
+            <div className="layer-list">
+              {[...project.objects].reverse().map((object) => {
+                const dropClass = layerDropTarget?.id === object.id ? `drop-${layerDropTarget.edge}` : "";
+                return (
+                  <div
+                    className={`layer-row ${selectedId === object.id ? "selected" : ""} ${draggedLayerId === object.id ? "dragging" : ""} ${dropClass}`}
+                    key={object.id}
+                    onDragOver={(event) => layerDragOver(event, object.id)}
+                    onDrop={(event) => layerDrop(event, object.id)}
+                  >
+                    <button
+                      className="layer-drag-handle"
+                      draggable
+                      title={`Drag ${object.name} to reorder`}
+                      aria-label={`Drag ${object.name} to reorder`}
+                      onDragStart={(event) => layerDragStart(event, object.id)}
+                      onDragEnd={finishLayerDrag}
+                    ><GripVertical size={15} /></button>
+                    <button className="layer-icon-button" title={object.visible ? "Hide layer" : "Show layer"} aria-label={object.visible ? "Hide layer" : "Show layer"} onClick={() => toggleVisibility(object.id)}>{object.visible ? <Eye size={15} /> : <EyeOff size={15} />}</button>
+                    <button className="layer-main" title={`Select ${object.name}`} onClick={() => selectById(object.id)}>
+                      <span className={`layer-thumbnail kind-${object.kind}`}>{object.kind === "text" ? <Type size={18} /> : object.kind === "image" ? <ImagePlus size={17} /> : <Shapes size={17} />}</span>
+                      <span><strong>{object.name}</strong><small>{object.kind}</small></span>
+                    </button>
+                    <button className="layer-icon-button" title={object.locked ? "Unlock layer" : "Lock layer"} aria-label={object.locked ? "Unlock layer" : "Lock layer"} onClick={() => toggleLock(object.id)}>{object.locked ? <Lock size={14} /> : <Unlock size={14} />}</button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="depth-view" aria-label="3D visualization of layer depth">
+              <div className="depth-axis"><span>FRONT</span><i /><span>BACK</span></div>
+              <div className="depth-stack" style={{ height: `${Math.max(280, project.objects.length * 50 + 110)}px` }}>
+                {[...project.objects].reverse().map((object, index) => (
+                  <button
+                    className={`depth-plane kind-${object.kind} ${selectedId === object.id ? "selected" : ""} ${!object.visible ? "hidden-layer" : ""}`}
+                    style={{
+                      "--depth-x": `${index * 3}px`,
+                      "--depth-y": `${index * 48}px`,
+                      zIndex: project.objects.length - index,
+                    } as React.CSSProperties}
+                    key={object.id}
+                    title={`Select ${object.name}, depth ${project.objects.length - index} of ${project.objects.length}`}
+                    onClick={() => selectById(object.id)}
+                  >
+                    <span className="depth-plane-index">Z{String(project.objects.length - index).padStart(2, "0")}</span>
+                    <span className="depth-plane-name"><strong>{object.name}</strong><small>{object.kind}{object.locked ? " · locked" : ""}</small></span>
+                    {!object.visible && <EyeOff size={14} />}
+                  </button>
+                ))}
+              </div>
+              <p className="depth-note">Front layers render above the planes behind them. Select a plane here, then use the arrows below—or switch to List and drag it.</p>
+            </div>
+          )}
           {!project.objects.length && <p className="empty-note">This artboard is empty. Add text, a shape, or an image to begin.</p>}
           <div className="layer-toolbar" aria-label="Layer actions">
             <button title="Add text layer" aria-label="Add text layer" onClick={() => void addText("body")}><Plus size={16} /></button>
@@ -1100,10 +1205,10 @@ function Editor({
       );
     }
     if (activeTool === "AI") {
-      return <AiConnectionsPanel model={accountConnections} projectId={project.id} openAccount={() => setActiveTool("Account")} />;
+      return <AiConnectionsPanel model={accountConnections} projectId={project.id} openAccount={() => setSignInOpen(true)} />;
     }
     if (activeTool === "Account") {
-      return <AccountPanel model={accountConnections} />;
+      return <AccountPanel model={accountConnections} openSignIn={() => setSignInOpen(true)} />;
     }
     if (activeTool === "Images") {
       return <ImagePanel upload={() => fileInput.current?.click()} addOpenImage={addOpenverseImage} />;
@@ -1168,7 +1273,7 @@ function Editor({
           <button className="icon-button" aria-label="Undo" title="Undo (Ctrl/⌘+Z)" disabled={!canUndo(project)} onClick={undo}><Undo2 size={18} /></button>
           <button className="icon-button" aria-label="Redo" title="Redo (Ctrl/⌘+Shift+Z)" disabled={!canRedo(project)} onClick={redo}><Redo2 size={18} /></button>
           <button className="ai-button" onClick={() => setActiveTool("AI")}><Sparkles size={17} /> Ask AI</button>
-          <button className="account-button" onClick={() => setActiveTool("Account")}><UserRound size={17} /> {accountConnections.snapshot.account?.displayName ?? "Sign in"}</button>
+          <button className="account-button" onClick={() => accountConnections.snapshot.account ? setActiveTool("Account") : setSignInOpen(true)}><UserRound size={17} /> {accountConnections.snapshot.account?.displayName ?? "Sign in"}</button>
           <button className="export-button" onClick={() => exportImage("image/png")}><Download size={17} /> Export PNG</button>
         </div>
       </header>
@@ -1283,6 +1388,7 @@ function Editor({
         )}
         <div className="privacy-stamp"><span>LOCAL BY DEFAULT</span><p>Projects and original image assets are stored in this browser's private database.</p></div>
       </aside>
+      <SignInModal model={accountConnections} open={signInOpen} onClose={() => setSignInOpen(false)} />
     </main>
   );
 }

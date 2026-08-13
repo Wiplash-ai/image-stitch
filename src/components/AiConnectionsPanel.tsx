@@ -37,12 +37,12 @@ export function AiConnectionsPanel({
               <div className="connection-detail"><LockKeyhole size={13} />{definition.detail}</div>
               {connection ? (
                 <>
-                  <div className="connection-status"><CheckCircle2 size={14} /><span>{connection.status === "preview" ? "Preview connected" : connection.status === "attention" ? "Needs attention" : "Connected"}</span><small>{connection.label}</small></div>
+                  <div className="connection-status"><CheckCircle2 size={14} /><span>{connection.status === "attention" ? "Needs attention" : "Connected"}</span><small>{connection.label}</small></div>
                   <button className="disconnect-button" disabled={busy} onClick={() => void model.disconnect(connection.id)}><Unplug size={14} /> Disconnect</button>
                 </>
               ) : account ? (
-                <button className="connect-button" disabled={busy} onClick={() => void model.connect(definition.kind, projectId)}>
-                  {model.mode === "local-preview" ? "Preview connection" : "Connect securely"}
+                <button className="connect-button" title={model.mode === "device" ? "Cloud account service required" : `Connect ${definition.name}`} disabled={busy || model.mode === "device"} onClick={() => void model.connect(definition.kind, projectId)}>
+                  {model.mode === "device" ? "Cloud connection required" : "Connect securely"}
                 </button>
               ) : (
                 <button className="connect-button" onClick={openAccount}>Sign in to connect</button>

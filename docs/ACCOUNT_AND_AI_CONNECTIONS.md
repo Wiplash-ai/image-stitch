@@ -9,15 +9,15 @@ provider connections, sharing, and future team controls.
 
 The public client supports two adapters:
 
-- `local-preview` exercises account, sync-preference, connect, and disconnect
-  states on one device. It is visibly labeled and never sends email or contacts
-  OpenAI.
+- `device` stores a browser-bound profile for personalization when the account
+  service is not configured. It never claims cloud authentication, enables
+  sync, or creates pretend AI connections.
 - `service` talks to the optional private account service configured by
   `VITE_IMAGESTITCH_ACCOUNT_API_URL`.
 
-The local preview stores only a display profile, non-secret connection receipts,
-and the sync preference. It is not authentication and must not be presented as
-such in production.
+The device adapter stores only a display profile. Cloud actions remain visibly
+unavailable. Production sign-in is a passwordless modal that hands email-link
+requests to the service adapter and receives sessions through protected cookies.
 
 ## Connection lanes
 

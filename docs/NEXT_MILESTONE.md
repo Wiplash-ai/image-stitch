@@ -64,7 +64,7 @@ Once the selection and command model is stable:
   per-operation accept/reject choice.
 - Apply approved operations as one named, reversible revision.
 - Build inspect/propose/apply MCP tools against the same command layer.
-- Keep provider connections in preview/contract mode until production account,
+- Keep provider connections unavailable until production account,
   OAuth, credential vaulting, revocation, and audit boundaries are ready.
 
 ## Later

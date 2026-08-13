@@ -51,6 +51,11 @@ states are intentionally excluded from application chrome.
 5. **White inspector:** properties for the current selection only.
 6. **Status receipt:** local-save state, revision, export warnings, and AI scope.
 
+The Layers panel supports direct drag ordering and a compact exploded-stack
+mode. The 3D view is functional information design: planes are labeled with
+their z-index, front-to-back direction remains explicit, and every plane stays
+selectable. It does not add ornamental depth to the rest of the interface.
+
 ## Interaction rules
 
 - Core actions work with mouse, keyboard, and touch-sized targets.
@@ -61,6 +66,9 @@ states are intentionally excluded from application chrome.
   controls remain available and every icon-only action carries a tooltip.
 - Continuous controls may preview live, but one completed gesture creates one
   undo revision.
+- Sign-in appears as a focused modal rather than replacing a creative tool
+  panel. When the cloud account service is absent, ImageStitch clearly offers a
+  browser-bound device profile and leaves cloud/provider actions unavailable.
 - Escape exits the current mode; Delete removes selected objects after undo is
   available; arrow keys nudge; Shift modifies constraints consistently.
 - Auto-save reports a receipt. It never merely flashes an ambiguous spinner.

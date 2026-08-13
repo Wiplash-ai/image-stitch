@@ -125,12 +125,24 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .toast small { display: block; margin-top: 4px; color: #c9c9c9; font: 8px var(--mono); }
 
 .layers-panel { min-height: 100%; display: flex; flex-direction: column; }
+.layer-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.layer-view-switch { display: flex; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--white); }
+.layer-view-switch button { width: 31px; height: 29px; display: grid; place-items: center; border: 0; border-left: 1px solid var(--line); background: transparent; cursor: pointer; }
+.layer-view-switch button:first-child { border-left: 0; }
+.layer-view-switch button:hover, .layer-view-switch button.active { color: var(--white); background: var(--ink); }
 .layer-list { display: grid; gap: 1px; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--line); }
-.layer-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) 30px; min-height: 49px; background: var(--white); }
+.layer-row { position: relative; display: grid; grid-template-columns: 22px 29px minmax(0, 1fr) 29px; min-height: 49px; background: var(--white); }
 .layer-row.selected { background: #e5e5e5; box-shadow: inset 3px 0 0 var(--ink); }
+.layer-row.dragging { opacity: .38; }
+.layer-row.drop-before::before, .layer-row.drop-after::after { content: ""; position: absolute; z-index: 3; left: 3px; right: 3px; height: 3px; border-radius: 999px; background: var(--ink); pointer-events: none; }
+.layer-row.drop-before::before { top: -2px; }
+.layer-row.drop-after::after { bottom: -2px; }
 .layer-row > button { border: 0; padding: 0; background: transparent; cursor: pointer; }
 .layer-row > button:hover { background: rgba(0,0,0,.06); }
 .layer-row .layer-main { min-width: 0; display: flex; align-items: center; gap: 8px; padding: 6px 5px; text-align: left; }
+.layer-drag-handle { display: grid; place-items: center; color: #949494; cursor: grab !important; }
+.layer-drag-handle:active { cursor: grabbing !important; }
+.layer-drag-handle:hover { color: var(--ink); }
 .layer-icon-button { display: grid; place-items: center; color: var(--muted); }
 .layer-icon-button:hover { color: var(--ink); }
 .layer-main > span:last-child { min-width: 0; display: grid; }
@@ -145,6 +157,22 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .layer-toolbar button:hover:not(:disabled) { color: var(--ink); border-color: var(--line-strong); background: var(--surface-strong); }
 .layer-toolbar button:disabled { opacity: .3; cursor: not-allowed; }
 .layer-toolbar button.danger:hover:not(:disabled) { color: var(--danger); }
+.depth-view { display: grid; min-height: 0; }
+.depth-axis { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 7px; margin: -4px 4px 7px; color: var(--muted); font: 7px var(--mono); letter-spacing: .1em; }
+.depth-axis i { height: 1px; background: linear-gradient(90deg, var(--ink), var(--line)); }
+.depth-stack { position: relative; min-height: 280px; overflow: hidden; perspective: 620px; perspective-origin: 50% 18%; border: 1px solid var(--line-strong); border-radius: 5px; background-color: #d7d7d7; background-image: linear-gradient(rgba(0,0,0,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,.045) 1px, transparent 1px); background-size: 14px 14px; box-shadow: inset 0 0 34px rgba(0,0,0,.08); }
+.depth-plane { --depth-x: 0px; --depth-y: 0px; position: absolute; top: 21px; left: 50%; width: 194px; height: 78px; display: grid; grid-template-columns: 34px 1fr 18px; align-items: center; gap: 7px; padding: 8px; border: 1px solid #777; border-radius: 2px; color: var(--ink); background: rgba(255,255,255,.91); box-shadow: 0 9px 0 rgba(17,17,17,.08), 0 12px 17px rgba(0,0,0,.16); transform-origin: center; transform: translateX(calc(-50% + var(--depth-x))) translateY(var(--depth-y)) rotateX(55deg) rotateZ(-7deg); cursor: pointer; text-align: left; }
+.depth-plane:hover { border-color: var(--ink); background: var(--white); translate: 0 -3px; }
+.depth-plane.selected { border: 3px solid var(--ink); background: var(--white); box-shadow: 0 9px 0 rgba(17,17,17,.18), 0 15px 24px rgba(0,0,0,.22); }
+.depth-plane.hidden-layer { opacity: .46; border-style: dashed; }
+.depth-plane.kind-text { color: var(--white); background: rgba(17,17,17,.92); }
+.depth-plane.kind-image { background: rgba(239,239,239,.94); }
+.depth-plane.kind-shape { color: var(--ink); background: rgba(217,217,217,.94); }
+.depth-plane-index { font: 700 9px var(--mono); }
+.depth-plane-name { min-width: 0; display: grid; gap: 2px; }
+.depth-plane-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.depth-plane-name small { color: currentColor; opacity: .6; font: 7px var(--mono); text-transform: uppercase; }
+.depth-note { margin: 10px 2px 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
 .empty-note { padding: 22px 6px; color: var(--muted); text-align: center; font-size: 11px; line-height: 1.5; }
 
 .text-preset-list { display: grid; gap: 8px; }
@@ -227,17 +255,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .account-intro svg { color: var(--green); }
 .account-intro h3 { margin: 10px 0 7px; font: 700 19px var(--display); }
 .account-intro p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
-.sign-in-form { display: grid; gap: 8px; margin-top: 18px; }
-.sign-in-form > label { font-size: 10px; font-weight: 700; }
-.sign-in-form > div { display: grid; grid-template-columns: 34px 1fr; align-items: center; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--white); }
-.sign-in-form > div svg { margin: auto; color: var(--muted); }
-.sign-in-form input { min-width: 0; padding: 10px 8px; border: 0; border-left: 1px solid var(--line); background: transparent; font-size: 10px; }
-.sign-in-form button { min-height: 38px; border: 1px solid var(--ink); border-radius: 6px; color: var(--white); background: var(--ink); cursor: pointer; font-size: 10px; font-weight: 700; }
-.sign-in-form button:hover { background: #2b2b2b; }
-.sign-in-form button:disabled { opacity: .55; cursor: wait; }
-.preview-disclosure { margin-top: 15px; padding: 12px; border-left: 3px solid var(--ink); background: var(--surface-strong); }
-.preview-disclosure strong { font-size: 9px; }
-.preview-disclosure p { margin: 5px 0 0; color: var(--muted); font-size: 9px; line-height: 1.45; }
+.account-sign-in-button { width: 100%; min-height: 39px; margin-top: 16px; border: 1px solid var(--ink); border-radius: 6px; color: var(--white); background: var(--ink); cursor: pointer; font-size: 10px; font-weight: 700; }
+.account-sign-in-button:hover { background: #2b2b2b; }
 .account-card { display: flex; align-items: center; gap: 12px; padding: 15px; border: 1px solid var(--line); border-radius: 8px; background: var(--white); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
 .account-avatar { width: 42px; height: 42px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 6px; color: var(--white); background: var(--ink); }
 .status-chip { color: var(--muted); font: 7px var(--mono); letter-spacing: .1em; }
@@ -257,6 +276,41 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .panel-message.success { background: #edf7f1; }
 .panel-message.error { color: var(--danger); border-color: var(--danger); background: #fff2f0; }
 .panel-message small { display: block; margin-top: 4px; color: var(--muted); font: 7px var(--mono); }
+
+.modal-backdrop { position: fixed; z-index: 50; inset: 0; display: grid; place-items: center; padding: 28px; background: rgba(17,17,17,.62); backdrop-filter: blur(5px); }
+.sign-in-modal { position: relative; width: min(440px, 100%); overflow: hidden; border: 1px solid var(--ink); border-radius: 10px; background: var(--white); box-shadow: 0 28px 85px rgba(0,0,0,.35); }
+.sign-in-modal::before { content: ""; position: absolute; z-index: 2; inset: 0 0 auto; height: 5px; background: linear-gradient(90deg, #ff4b4b 0 18%, #ff9f1c 18% 35%, #ffe83b 35% 51%, #2fca75 51% 67%, #2ca8ff 67% 84%, #7c5cff 84% 100%); }
+.sign-in-modal > header { height: 67px; display: flex; align-items: center; justify-content: space-between; padding: 9px 13px 8px 17px; border-bottom: 1px solid var(--line); }
+.modal-brand { display: flex; align-items: center; gap: 9px; font: 700 15px var(--display); }
+.modal-brand img { width: 30px; height: 30px; }
+.modal-close { width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 5px; background: transparent; cursor: pointer; }
+.modal-close:hover { background: var(--surface-strong); }
+.modal-close:disabled { opacity: .4; cursor: wait; }
+.modal-copy { padding: 28px 32px 19px; text-align: center; }
+.modal-copy > p { margin: 0 0 8px; color: var(--muted); font: 700 8px var(--mono); letter-spacing: .13em; }
+.modal-copy h2 { margin: 0; font: 750 28px/1.05 var(--display); letter-spacing: -.04em; }
+.modal-copy > span { display: block; max-width: 340px; margin: 12px auto 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.modal-sign-in-form { display: grid; gap: 8px; padding: 0 32px; }
+.modal-sign-in-form > label { font-size: 10px; font-weight: 700; }
+.modal-sign-in-form > div { height: 43px; display: grid; grid-template-columns: 42px 1fr; align-items: center; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--white); }
+.modal-sign-in-form > div:focus-within { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.modal-sign-in-form svg { margin: auto; color: var(--muted); }
+.modal-sign-in-form input { min-width: 0; height: 100%; padding: 0 10px; border: 0; border-left: 1px solid var(--line); outline: 0; font-size: 12px; }
+.modal-sign-in-form > button, .sign-in-success > button { min-height: 42px; margin-top: 3px; border: 1px solid var(--ink); border-radius: 6px; color: var(--white); background: var(--ink); cursor: pointer; font-size: 10px; font-weight: 750; }
+.modal-sign-in-form > button:hover, .sign-in-success > button:hover { background: #2b2b2b; }
+.modal-sign-in-form > button:disabled { opacity: .55; cursor: wait; }
+.modal-security-note { display: flex; align-items: flex-start; gap: 9px; margin: 18px 32px 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.modal-security-note svg { flex: 0 0 auto; color: var(--green); }
+.modal-security-note p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.modal-error { width: calc(100% - 64px); margin: 10px 32px 0; padding: 9px; border: 1px solid var(--danger); border-radius: 5px; color: var(--danger); background: #fff2f0; cursor: pointer; font-size: 9px; }
+.modal-error small { display: block; margin-top: 3px; color: var(--muted); font: 7px var(--mono); }
+.modal-continue-offline { width: 100%; min-height: 48px; margin-top: 14px; border: 0; border-top: 1px solid var(--line); color: var(--muted); background: transparent; cursor: pointer; font-size: 9px; }
+.modal-continue-offline:hover { color: var(--ink); background: var(--surface); }
+.sign-in-success { display: grid; justify-items: center; padding: 38px 38px 42px; text-align: center; }
+.sign-in-success > span { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; color: var(--green); background: #edf7f1; }
+.sign-in-success h2 { margin: 18px 0 7px; font: 750 27px var(--display); letter-spacing: -.035em; }
+.sign-in-success p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.sign-in-success > button { width: 100%; margin-top: 24px; }
 
 .inspector-field { display: grid; gap: 7px; margin-bottom: 14px; font-size: 10px; font-weight: 700; }
 .inspector-field > span { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
