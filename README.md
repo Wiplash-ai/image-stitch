@@ -25,6 +25,10 @@ Pre-alpha with a dependable local editing slice:
   controls for more precise composition.
 - Full-size PNG, JPEG, and WebP exports plus portable project import/export.
 - Public project, portable bundle, and AI edit-plan schemas.
+- Optional account shell with a visibly local-only preview adapter and a secure
+  cookie/CSRF client contract for the future private account service.
+- Separate ChatGPT/Codex plugin and OpenAI API connection states, with opaque
+  receipts and no provider-secret input in browser or extension code.
 - Manifest V3 extension with visible-page capture and a packaged copy of the
   same local editor.
 
@@ -63,6 +67,7 @@ The unpacked extension is generated at
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
 - [Product and interaction design](docs/DESIGN.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Account and AI connection contract](docs/ACCOUNT_AND_AI_CONNECTIONS.md)
 - [Open-source foundation](docs/OPEN_SOURCE_FOUNDATION.md)
 
 ## License

@@ -21,7 +21,9 @@ flowchart LR
   Editor --> ProjectStore[(IndexedDB projects)]
   Editor --> AssetStore[(IndexedDB image blobs)]
   Editor --> Exporter[Browser export pipeline]
+  Editor -. optional sign-in .-> Identity[Account service]
   ChatGPT[ChatGPT or Codex] -->|MCP tool calls| MCP[Public MCP adapter]
+  MCP -->|OAuth project grant| Identity
   MCP -->|validated edit plan| Editor
   Editor -. explicit BYOK action .-> Vault[Encrypted connection service]
   Vault -. provider request .-> OpenAI[OpenAI API]
@@ -38,6 +40,7 @@ flowchart LR
 | Extension shell | Capture, page integration, clipboard handoff | Pending captures | Chrome messages |
 | AI plan review | Validation, diff, selective acceptance | Edit plans | Plan review commands |
 | MCP adapter | Agent-facing project operations | No project bytes | Versioned MCP tools |
+| Account client | Optional sessions, preferences, safe connection receipts | No credentials | Cookie-backed service contract |
 | Connection service | Optional BYOK encryption and revocation | Encrypted credentials | Opaque connection IDs |
 
 Only project core commits durable project state. Canvas, AI, extension, and
@@ -132,6 +135,19 @@ and every plan binds to an immutable base revision.
 - **Alternatives:** Destructive raster replacement was simpler but would lose
   source quality and editability. Persisting Konva filter JSON would couple the
   public contract to one rendering engine.
+
+### ADR-006: optional account client with explicit preview mode
+
+- **Status:** Accepted.
+- **Decision:** Keep normal editing accountless. The public client exposes one
+  account/connection interface with a visibly labeled local preview adapter and
+  an HTTPS private-service adapter. Production sessions use HTTP-only cookies,
+  mutating requests use CSRF receipts, and connection responses contain opaque
+  identifiers rather than provider credentials.
+- **Consequences:** Account and connection UX can be dogfooded before private
+  infrastructure exists. Preview state must never be described as real login,
+  sync remains off by default, and extension identity needs a future device-link
+  flow rather than broad host permissions.
 
 ## Risks and mitigations
 

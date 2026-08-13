@@ -127,8 +127,25 @@ try {
   assert(editedPhoto.crop.width < 1 || editedPhoto.crop.height < 1, "Portable projects should retain non-destructive crops");
   assert(Math.abs(editedPhoto.x - 510) < 0.01, "Near-center drags should snap the cropped photo to the artboard center");
   assert(projectBundle.project.objects.find((object) => object.name === "Headline").fontFamily === "Helvetica", "Portable projects should retain typography edits");
+
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByLabel("Email address").fill("mom.example@example.com");
+  await page.getByRole("button", { name: "Preview sign in" }).click();
+  await page.getByText("Preview account ready for mom.example@example.com.").waitFor();
+  assert(await page.getByRole("button", { name: "Mom Example", exact: true }).isVisible(), "Preview sign-in should update the account control");
+  await page.getByRole("button", { name: "Ask AI" }).click();
+  const subscriptionCard = page.locator(".connection-card").filter({ hasText: "ChatGPT / Codex" });
+  await subscriptionCard.getByRole("button", { name: "Preview connection" }).click();
+  await subscriptionCard.getByText("Preview connected").waitFor();
+  assert(await page.locator('input[type="password"]').count() === 0, "The editor must not expose a provider credential input");
+  assert(await page.getByText("key never enters this browser UI").isVisible(), "The API connection should disclose its credential boundary");
+
+  await page.reload({ waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Ask AI" }).click();
+  await page.locator(".connection-card").filter({ hasText: "ChatGPT / Codex" }).getByText("Preview connected").waitFor();
+  await page.screenshot({ path: "artifacts/account-ai-connections-smoke.png", fullPage: true });
   assert(browserErrors.length === 0, `Browser emitted errors:\n${browserErrors.join("\n")}`);
-  process.stdout.write("ImageStitch browser smoke passed: persistence, photo edits, typography, zoom, undo/redo, uploads, and exports.\n");
+  process.stdout.write("ImageStitch browser smoke passed: persistence, photo edits, typography, zoom, undo/redo, uploads, exports, optional account preview, and AI connection receipts.\n");
 } finally {
   await browser?.close();
   server.kill("SIGTERM");
