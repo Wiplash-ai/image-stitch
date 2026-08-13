@@ -17,7 +17,7 @@ undo, strong presets, and fast recovery over exposing graphics-engine jargon.
 
 ## Release sequence
 
-### Phase 0 — foundation (current)
+### Phase 0 — foundation (complete)
 
 - Shared Konva web editor packaged into the MV3 extension.
 - Upload and visible-page capture paths.
@@ -28,16 +28,19 @@ undo, strong presets, and fast recovery over exposing graphics-engine jargon.
 Exit gate: a clean clone passes `npm run verify`, the unpacked extension opens,
 captures a visible tab, and loads that capture into its bundled editor.
 
-### Phase 1 — dependable everyday editor
+### Phase 1 — dependable everyday editor (in progress)
 
-- IndexedDB asset store and multi-project dashboard.
-- Complete undo/redo command history and autosave/recovery receipts.
-- Layer panel: reorder, group, rename, duplicate, lock, hide, multi-select.
-- Alignment guides, snapping, rulers, zoom, keyboard shortcuts, paste/drop.
+- [x] IndexedDB project/asset stores and recent-project switching.
+- [x] Snapshot undo/redo history and autosave/recovery receipts.
+- [x] Layer panel: reorder, rename, duplicate, lock, and hide.
+- [ ] Grouping and multi-select.
+- [x] Core keyboard shortcuts, paste, and drop.
+- [ ] Alignment guides, snapping, rulers, and user-controlled zoom.
 - Text typography controls, local font upload, shapes, lines, borders, shadows.
 - Crop, rotate, flip, resize, opacity, blend modes, brightness, contrast,
   saturation, temperature, tint, blur, sharpen, vignette, and filters.
-- PNG, JPEG, WebP, SVG, project JSON, and print-ready PDF export.
+- [x] PNG, JPEG, WebP, and portable project bundle export/import.
+- [ ] SVG and print-ready PDF export.
 
 Exit gate: the design partner completes ten representative Canva/PicMonkey jobs
 without data loss or needing developer assistance.
@@ -78,16 +81,15 @@ made without a clear user action and disclosed data scope.
 
 ## Near-term backlog
 
-1. Replace localStorage metadata with IndexedDB project and asset repositories.
-2. Serialize the complete ImageStitch node model into the project manifest.
-3. Add command-based undo/redo and revision snapshots.
-4. Build the layer panel and object property inspector.
-5. Add crop/adjust/filter mode using Konva filters and pica resize.
-6. Add JPEG/WebP/project exports and deterministic import validation.
-7. Add extension region selection, image context-menu import, and clipboard copy.
-8. Test with five real projects supplied by the design partner.
-9. Implement edit-plan validation and a fixture AI review loop.
-10. Build the MCP server only after the operation model is stable.
+1. Add crop/adjust/filter mode using Konva filters and pica resize.
+2. Add alignment guides, snapping, zoom, multi-select, and grouping.
+3. Expand typography controls, shape families, borders, and shadows.
+4. Add extension region selection, image context-menu import, and clipboard copy.
+5. Add recovery/quota handling and a true project gallery with thumbnails.
+6. Add SVG/PDF export and export-dimension pixel assertions.
+7. Test with five real projects supplied by the design partner.
+8. Implement edit-plan validation and a fixture AI review loop.
+9. Build the MCP server only after the operation model is stable.
 
 ## Verification strategy
 
