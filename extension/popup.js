@@ -2,7 +2,7 @@ const status = document.querySelector("#status");
 
 document.querySelector("#capture").addEventListener("click", async () => {
   status.textContent = "Capturing…";
-  const result = await chrome.runtime.sendMessage({ type: "imagestitch.capture-visible" });
+  const result = await chrome.runtime.sendMessage({ type: "glassware.capture-visible" });
   if (!result?.ok) status.textContent = result?.error || "Capture failed.";
   else window.close();
 });

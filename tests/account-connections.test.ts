@@ -38,6 +38,7 @@ describe("account and AI connection clients", () => {
     expect(receipt.snapshot?.account).toMatchObject({ email: "mom.example@example.com", mode: "device" });
 
     await expect(client.startConnection("chatgpt_codex_plugin", "http://localhost:4173", "project-1")).rejects.toThrow("account service");
+    await expect(client.startSignIn("google", "http://localhost:4173")).rejects.toThrow("account service");
     await expect(client.setSyncEnabled(true)).rejects.toThrow("account service");
 
     const restored = await createDeviceAccountClient(storage).getSnapshot();
@@ -61,25 +62,32 @@ describe("account and AI connection clients", () => {
         email: "mom@example.com",
         expiresAt: "2026-08-14T00:00:00.000Z",
       });
-      return Response.json({ status: "redirect", authorizationUrl: "https://auth.imagestitch.dev/connect/request-1" });
+      if (String(input).endsWith("/v1/auth/authorizations")) {
+        return Response.json({ status: "redirect", authorizationUrl: "https://auth.glassware.dev/sign-in/request-1" });
+      }
+      return Response.json({ status: "redirect", authorizationUrl: "https://auth.glassware.dev/connect/request-1" });
     };
-    const client = createAccountServiceClient({ baseUrl: "https://account.imagestitch.dev/", fetch: fetcher });
+    const client = createAccountServiceClient({ baseUrl: "https://account.glassware.dev/", fetch: fetcher });
     await client.getSnapshot();
-    const signIn = await client.requestMagicLink("Mom@example.com", "https://app.imagestitch.dev");
-    const authorization = await client.startConnection("chatgpt_codex_plugin", "https://app.imagestitch.dev", "project-1");
+    const signIn = await client.requestMagicLink("Mom@example.com", "https://app.glassware.dev");
+    const providerSignIn = await client.startSignIn("github", "https://app.glassware.dev");
+    const authorization = await client.startConnection("chatgpt_codex_plugin", "https://app.glassware.dev", "project-1");
 
     expect(signIn).toMatchObject({ status: "email-sent", email: "mom@example.com" });
-    expect(authorization).toEqual({ status: "redirect", authorizationUrl: "https://auth.imagestitch.dev/connect/request-1" });
+    expect(providerSignIn).toEqual({ status: "redirect", authorizationUrl: "https://auth.glassware.dev/sign-in/request-1" });
+    expect(authorization).toEqual({ status: "redirect", authorizationUrl: "https://auth.glassware.dev/connect/request-1" });
     expect(requests[0].init?.credentials).toBe("include");
-    expect(requests[1].url).toBe("https://account.imagestitch.dev/v1/auth/magic-links");
-    expect(requests[1].init?.body).toBe(JSON.stringify({ email: "mom@example.com", returnUrl: "https://app.imagestitch.dev" }));
-    expect(requests[2].url).toBe("https://account.imagestitch.dev/v1/connections/chatgpt_codex_plugin/authorizations");
-    expect(new Headers(requests[2].init?.headers).get("x-imagestitch-csrf")).toBe("csrf-only");
-    expect(requests[2].init?.body).toBe(JSON.stringify({ returnUrl: "https://app.imagestitch.dev", projectId: "project-1" }));
+    expect(requests[1].url).toBe("https://account.glassware.dev/v1/auth/magic-links");
+    expect(requests[1].init?.body).toBe(JSON.stringify({ email: "mom@example.com", returnUrl: "https://app.glassware.dev" }));
+    expect(requests[2].url).toBe("https://account.glassware.dev/v1/auth/authorizations");
+    expect(requests[2].init?.body).toBe(JSON.stringify({ provider: "github", returnUrl: "https://app.glassware.dev" }));
+    expect(requests[3].url).toBe("https://account.glassware.dev/v1/connections/chatgpt_codex_plugin/authorizations");
+    expect(new Headers(requests[3].init?.headers).get("x-glassware-csrf")).toBe("csrf-only");
+    expect(requests[3].init?.body).toBe(JSON.stringify({ returnUrl: "https://app.glassware.dev", projectId: "project-1" }));
   });
 
   it("rejects unsafe service and authorization URLs", () => {
-    expect(() => validateServiceBaseUrl("http://account.imagestitch.dev")).toThrow("HTTPS");
+    expect(() => validateServiceBaseUrl("http://account.glassware.dev")).toThrow("HTTPS");
     expect(validateServiceBaseUrl("http://127.0.0.1:8789/")).toBe("http://127.0.0.1:8789");
     expect(() => validateAuthorizationUrl("javascript:alert(1)")).toThrow("unsafe");
   });

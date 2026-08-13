@@ -1,8 +1,8 @@
-# ImageStitch architecture
+# GlassWare architecture
 
 ## Requirements summary
 
-ImageStitch is a local-first browser application and MV3 extension for image
+GlassWare is a local-first browser application and MV3 extension for image
 composition and photo editing. It must remain useful offline, preserve source
 assets locally, support deterministic export, and accept constrained AI edit
 plans from several interchangeable providers.
@@ -18,7 +18,7 @@ flowchart LR
   Browser[Browser page] -->|capture or image| Extension[MV3 extension]
   Upload[Local files and clipboard] --> Editor
   Openverse[Openverse API] -->|search results and image bytes| Editor
-  Extension --> Editor[Shared ImageStitch editor]
+  Extension --> Editor[Shared GlassWare editor]
   Editor --> ProjectStore[(IndexedDB projects)]
   Editor --> AssetStore[(IndexedDB image blobs)]
   Editor --> FontStore[(IndexedDB font files)]
@@ -71,12 +71,12 @@ and every plan binds to an immutable base revision.
 
 ## Public contracts
 
-- `imagestitch.project.v1`: engine-independent project state, objects, and
+- `glassware.project.v1`: engine-independent project state, objects, and
   bounded revision snapshots.
-- `imagestitch.bundle.v1`: portable project plus base64-encoded local image and
+- `glassware.bundle.v1`: portable project plus base64-encoded local image and
   used font assets.
-- `imagestitch.edit-plan.v1`: rationale-bearing proposed object operations.
-- `imagestitch.export-receipt.v1`: source revision, dimensions, MIME type,
+- `glassware.edit-plan.v1`: rationale-bearing proposed object operations.
+- `glassware.export-receipt.v1`: source revision, dimensions, MIME type,
   byte size, hash, warnings, and approval time.
 - MCP tools will wrap the same commands; they do not receive an unrestricted
   browser, filesystem, or canvas mutation primitive.
@@ -86,9 +86,9 @@ and every plan binds to an immutable base revision.
 ### ADR-001: Konva as the initial canvas engine
 
 - **Status:** Accepted.
-- **Context:** ImageStitch needs a typed, MIT object canvas with dependable
+- **Context:** GlassWare needs a typed, MIT object canvas with dependable
   transforms, layers, events, filters, and browser/Node rendering options.
-- **Decision:** Use Konva as an adapter behind an ImageStitch-owned document
+- **Decision:** Use Konva as an adapter behind a GlassWare-owned document
   model. Konva passed the initial Chrome visual alignment check and also powers
   the MIT Filerobot editor. It is not the public project contract.
 - **Consequences:** We own serialization, typography behavior, history, and
@@ -185,7 +185,7 @@ and every plan binds to an immutable base revision.
   a selected family through the public CSS API, then store the returned font
   bytes in IndexedDB and register them through `FontFace`. WOFF, WOFF2, TTF, and
   OTF uploads use the same store. Portable bundles embed only font families used
-  by that project. Google catalog metadata is curated in source so ImageStitch
+  by that project. Google catalog metadata is curated in source so GlassWare
   does not require a Google Fonts Developer API key.
 - **Consequences:** Installed fonts work offline after first download and travel
   with portable projects. Google download requires narrowly scoped extension

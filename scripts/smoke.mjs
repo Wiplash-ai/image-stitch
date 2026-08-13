@@ -38,7 +38,7 @@ async function downloadBuffer(download) {
 let browser;
 try {
   await waitForServer();
-  browser = await chromium.launch({ executablePath: process.env.IMAGESTITCH_CHROME || "/usr/bin/google-chrome", headless: true });
+  browser = await chromium.launch({ executablePath: process.env.GLASSWARE_CHROME || process.env.IMAGESTITCH_CHROME || "/usr/bin/google-chrome", headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
   let openImagePng = Buffer.alloc(0);
   await page.route("https://api.openverse.org/**", async (route) => {
@@ -93,17 +93,15 @@ try {
   await page.getByRole("button", { name: "Layers" }).click();
   assert(await page.locator(".layer-row").count() === 3, "Starter project should have three layers");
   const captionRow = page.locator(".layer-row").filter({ hasText: "Caption" });
-  await page.getByRole("button", { name: "Drag Headline to reorder" }).dragTo(captionRow, { targetPosition: { x: 80, y: 2 } });
+  const headlineRow = page.locator(".layer-row").filter({ hasText: "Headline" });
+  assert(await headlineRow.getAttribute("draggable") === "true", "The whole layer card should be the drag source");
+  await headlineRow.dragTo(captionRow, { targetPosition: { x: 80, y: 2 } });
   assert((await page.locator(".layer-row").first().innerText()).includes("Headline"), "Dragging a layer should move it to the chosen z-order position");
   await page.getByRole("button", { name: "Undo" }).click();
   assert((await page.locator(".layer-row").first().innerText()).includes("Caption"), "Layer drag reordering should be undoable");
   await page.getByRole("button", { name: "Redo" }).click();
   assert((await page.locator(".layer-row").first().innerText()).includes("Headline"), "Layer drag reordering should be redoable");
-  await page.getByRole("button", { name: "3D layer depth" }).click();
-  assert(await page.locator(".depth-plane").count() === 3, "3D layer mode should expose one depth plane per object");
-  assert((await page.locator(".depth-plane").first().innerText()).includes("Z03"), "The front layer should carry the highest visible z-index");
-  await page.screenshot({ path: "artifacts/layer-depth-smoke.png", fullPage: true });
-  await page.getByRole("button", { name: "Layer list" }).click();
+  assert(await page.getByRole("button", { name: "3D layer depth" }).count() === 0, "Layers should stay in the compact professional list view");
 
   await page.getByRole("button", { name: "Shapes" }).click();
   assert(await page.locator(".shape-library button").count() === 12, "The shape library should expose twelve starter shapes");
@@ -220,9 +218,9 @@ try {
   const projectDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: "Save a portable copy" }).click();
   const downloadedProject = await projectDownload;
-  assert(downloadedProject.suggestedFilename().endsWith(".imagestitch.json"), "Project export should create a portable bundle");
+  assert(downloadedProject.suggestedFilename().endsWith(".glassware.json"), "Project export should create a portable bundle");
   const projectBundle = JSON.parse((await downloadBuffer(downloadedProject)).toString("utf8"));
-  assert(projectBundle.schemaVersion === "imagestitch.bundle.v1", "Project export should use the public bundle schema");
+  assert(projectBundle.schemaVersion === "glassware.bundle.v1", "Project export should use the public bundle schema");
   assert(projectBundle.assets.some((asset) => asset.name === "smoke.png" && asset.dataUrl.startsWith("data:image/png;base64,")), "Portable bundles should include original image bytes");
   const openAsset = projectBundle.assets.find((asset) => asset.name === "Open-flower.png");
   assert(openAsset?.source?.provider === "openverse" && openAsset.source.license === "BY", "Searched images should retain their Openverse license receipt");
@@ -255,7 +253,7 @@ try {
   assert(await page.locator(".connection-card").filter({ hasText: "ChatGPT / Codex" }).getByRole("button", { name: "Cloud connection required" }).isDisabled(), "Reload should preserve the honest provider boundary");
   await page.screenshot({ path: "artifacts/account-ai-connections-smoke.png", fullPage: true });
   assert(browserErrors.length === 0, `Browser emitted errors:\n${browserErrors.join("\n")}`);
-  process.stdout.write("ImageStitch browser smoke passed: draggable and 3D layers, modal sign-in, device profile, inline text, fonts, colors, wheel zoom, open images, persistence, exports, and honest AI boundaries.\n");
+  process.stdout.write("GlassWare browser smoke passed: full-card draggable layers, modal sign-in, device profile, inline text, fonts, colors, wheel zoom, open images, persistence, exports, and honest AI boundaries.\n");
 } finally {
   await browser?.close();
   server.kill("SIGTERM");

@@ -1,4 +1,4 @@
-# ImageStitch implementation plan
+# GlassWare implementation plan
 
 **Status:** Accepted foundation
 **Version:** 0.3
@@ -32,7 +32,7 @@ captures a visible tab, and loads that capture into its bundled editor.
 
 - [x] IndexedDB project/asset stores and recent-project switching.
 - [x] Snapshot undo/redo history and autosave/recovery receipts.
-- [x] Layer panel: drag reorder, 3D depth view, rename, duplicate, lock, and hide.
+- [x] Layer panel: full-card drag reorder, rename, duplicate, lock, and hide.
 - [ ] Grouping and multi-select.
 - [x] Core keyboard shortcuts, paste, and drop.
 - [x] Alignment guides, object/artboard snapping, and user-controlled zoom.
@@ -60,7 +60,7 @@ The scoped milestone, success measures, dependencies, and sequencing are in
 ### Phase 2 — templates and repeatability
 
 - Social, card, invitation, flyer, banner, label, and print presets.
-- Searchable templates with original, clearly licensed ImageStitch content.
+- Searchable templates with original, clearly licensed GlassWare content.
 - Brand kits for colors, fonts, logos, reusable components, and defaults.
 - Multi-page projects, page duplication, resize-with-layout adaptation.
 - Background removal adapter and local/manual fallback tools.
@@ -74,7 +74,7 @@ under five minutes.
 - [x] Modal account entry, honest device-profile fallback, and separate
   ChatGPT/Codex versus OpenAI API connection states backed by a public
   private-service client contract.
-- `imagestitch.edit-plan.v1` validator and selective plan review UI.
+- `glassware.edit-plan.v1` validator and selective plan review UI.
 - MCP tools for inspecting projects, adding assets, proposing edits, applying
   approved operations, and exporting approved revisions.
 - ChatGPT/Codex plugin path using the user's existing authenticated client.

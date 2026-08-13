@@ -51,7 +51,7 @@ export function AiConnectionsPanel({
           );
         })}
       </div>
-      <div className="panel-section ai-note"><Bot size={20} /><div><strong>No bundled AI surcharge</strong><p>ChatGPT/Codex subscription access and separately billed API access are distinct. ImageStitch never converts one into the other.</p></div></div>
+      <div className="panel-section ai-note"><Bot size={20} /><div><strong>No bundled AI surcharge</strong><p>ChatGPT/Codex subscription access and separately billed API access are distinct. GlassWare never converts one into the other.</p></div></div>
       {(model.notice || model.error) && (
         <button className={`panel-message ${model.error ? "error" : "success"}`} onClick={model.clearMessage}>
           {model.error || model.notice}<small>Dismiss</small>

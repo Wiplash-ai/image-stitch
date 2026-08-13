@@ -95,8 +95,8 @@ export interface Revision {
   snapshot: ProjectSnapshot;
 }
 
-export interface ImageStitchProject {
-  schemaVersion: "imagestitch.project.v1";
+export interface GlassWareProject {
+  schemaVersion: "glassware.project.v1";
   id: string;
   name: string;
   residency: "local";
@@ -206,7 +206,7 @@ export function createStarterObjects(): DesignNode[] {
   ];
 }
 
-export function createProject(name = "Untitled stitch", starter = true): ImageStitchProject {
+export function createProject(name = "Untitled stitch", starter = true): GlassWareProject {
   const createdAt = now();
   const revisionId = newId();
   const snapshot: ProjectSnapshot = {
@@ -214,7 +214,7 @@ export function createProject(name = "Untitled stitch", starter = true): ImageSt
     objects: starter ? createStarterObjects() : [],
   };
   return {
-    schemaVersion: "imagestitch.project.v1",
+    schemaVersion: "glassware.project.v1",
     id: newId(),
     name,
     residency: "local",
@@ -235,28 +235,28 @@ export function createProject(name = "Untitled stitch", starter = true): ImageSt
   };
 }
 
-export function projectSnapshot(project: ImageStitchProject): ProjectSnapshot {
+export function projectSnapshot(project: GlassWareProject): ProjectSnapshot {
   return cloneSnapshot({ canvas: project.canvas, objects: project.objects });
 }
 
-export function currentRevisionIndex(project: ImageStitchProject): number {
+export function currentRevisionIndex(project: GlassWareProject): number {
   const index = project.revisions.findIndex((revision) => revision.id === project.currentRevisionId);
   return index === -1 ? project.revisions.length - 1 : index;
 }
 
-export function canUndo(project: ImageStitchProject): boolean {
+export function canUndo(project: GlassWareProject): boolean {
   return currentRevisionIndex(project) > 0;
 }
 
-export function canRedo(project: ImageStitchProject): boolean {
+export function canRedo(project: GlassWareProject): boolean {
   return currentRevisionIndex(project) < project.revisions.length - 1;
 }
 
 export function commitSnapshot(
-  project: ImageStitchProject,
+  project: GlassWareProject,
   summary: string,
   snapshot: ProjectSnapshot,
-): ImageStitchProject {
+): GlassWareProject {
   const createdAt = now();
   const currentIndex = currentRevisionIndex(project);
   const revisions = project.revisions.slice(0, currentIndex + 1);
@@ -278,7 +278,7 @@ export function commitSnapshot(
   };
 }
 
-function moveToRevision(project: ImageStitchProject, index: number): ImageStitchProject {
+function moveToRevision(project: GlassWareProject, index: number): GlassWareProject {
   const revision = project.revisions[index];
   if (!revision) return project;
   const snapshot = cloneSnapshot(revision.snapshot);
@@ -291,18 +291,18 @@ function moveToRevision(project: ImageStitchProject, index: number): ImageStitch
   };
 }
 
-export function undoProject(project: ImageStitchProject): ImageStitchProject {
+export function undoProject(project: GlassWareProject): GlassWareProject {
   return moveToRevision(project, currentRevisionIndex(project) - 1);
 }
 
-export function redoProject(project: ImageStitchProject): ImageStitchProject {
+export function redoProject(project: GlassWareProject): GlassWareProject {
   return moveToRevision(project, currentRevisionIndex(project) + 1);
 }
 
 export function setCanvasPreset(
-  project: ImageStitchProject,
+  project: GlassWareProject,
   preset: Exclude<CanvasPreset, "custom">,
-): ImageStitchProject {
+): GlassWareProject {
   const canvas = { ...CANVAS_PRESETS[preset], background: project.canvas.background };
   return commitSnapshot(project, `Canvas set to ${preset}`, { canvas, objects: project.objects });
 }
@@ -401,14 +401,14 @@ function normalizeCanvas(value: unknown): CanvasSettings | null {
   };
 }
 
-export function normalizeProject(value: unknown): ImageStitchProject | null {
+export function normalizeProject(value: unknown): GlassWareProject | null {
   if (!value || typeof value !== "object") return null;
-  const candidate = value as Partial<ImageStitchProject> & {
+  const candidate = value as Partial<GlassWareProject> & {
     canvas?: Partial<CanvasSettings>;
     objects?: Array<Record<string, unknown>>;
     revisions?: Array<Partial<Revision>>;
   };
-  if (candidate.schemaVersion !== "imagestitch.project.v1" || !candidate.id || !candidate.name) {
+  if (!["glassware.project.v1", "imagestitch.project.v1"].includes(String(candidate.schemaVersion)) || !candidate.id || !candidate.name) {
     return null;
   }
 
@@ -452,7 +452,7 @@ export function normalizeProject(value: unknown): ImageStitchProject | null {
     : revisions.at(-1)!.id;
 
   return {
-    schemaVersion: "imagestitch.project.v1",
+    schemaVersion: "glassware.project.v1",
     id: candidate.id,
     name: candidate.name,
     residency: "local",

@@ -13,14 +13,14 @@ extension.
 
 ## Provider contract
 
-ImageStitch uses the official [Openverse image API](https://api.openverse.org/)
+GlassWare uses the official [Openverse image API](https://api.openverse.org/)
 without authentication. The initial search
 filter includes public-domain marks, CC0, and CC BY media, excludes results
 marked mature, and requests twelve results at a time. The adapter normalizes
 only the fields the editor needs and converts rate limits or outages into a
 recoverable panel message.
 
-When a user adds a result, ImageStitch downloads image bytes through the
+When a user adds a result, GlassWare downloads image bytes through the
 Openverse image endpoint and writes them to the same IndexedDB asset store used
 for local files. It also stores:
 
@@ -33,7 +33,7 @@ for local files. It also stores:
 That receipt is visible in the image inspector and included in portable project
 bundles. It is metadata, not a guarantee: [Openverse advises users to verify a
 work's license](https://docs.openverse.org/api/reference/made_with_ov.html), so
-ImageStitch retains a direct “Verify source” link.
+GlassWare retains a direct “Verify source” link.
 
 ## Extension permission
 

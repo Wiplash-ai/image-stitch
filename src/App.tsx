@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import Konva from "konva";
 import {
   Bold,
-  Box,
   BringToFront,
   AlignCenter,
   AlignLeft,
@@ -20,7 +19,6 @@ import {
   ImagePlus,
   Italic,
   Layers3,
-  List,
   Lock,
   LoaderCircle,
   MousePointer2,
@@ -59,7 +57,7 @@ import {
   type DesignNode,
   type ImageAdjustments,
   type ImageDesignNode,
-  type ImageStitchProject,
+  type GlassWareProject,
   type NormalizedCrop,
   type ShapeKind,
 } from "./lib/model";
@@ -132,28 +130,27 @@ type TextPreset = "heading" | "subheading" | "body";
 
 type SaveState = "saving" | "saved" | "error";
 type ToolName = "Select" | "Images" | "Text" | "Shapes" | "Layers" | "Files" | "AI" | "Account";
-type LayerView = "list" | "depth";
 type LayerDropTarget = { id: string; edge: "before" | "after" };
 
 function App() {
-  const [project, setProject] = useState<ImageStitchProject | null>(null);
+  const [project, setProject] = useState<GlassWareProject | null>(null);
   const [bootError, setBootError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     void bootstrapProject()
       .then((loaded) => !cancelled && setProject(loaded))
-      .catch((error: unknown) => !cancelled && setBootError(error instanceof Error ? error.message : "Unable to open ImageStitch"));
+      .catch((error: unknown) => !cancelled && setBootError(error instanceof Error ? error.message : "Unable to open GlassWare"));
     return () => {
       cancelled = true;
     };
   }, []);
 
   if (bootError) {
-    return <div className="boot-screen"><img src="./image-stitch-mark.svg" alt="" /><h1>ImageStitch could not open.</h1><p>{bootError}</p></div>;
+    return <div className="boot-screen"><img src="./glassware-mark.svg" alt="" /><h1>GlassWare could not open.</h1><p>{bootError}</p></div>;
   }
   if (!project) {
-    return <div className="boot-screen"><img src="./image-stitch-mark.svg" alt="" /><h1>Opening your local workbench…</h1><p>Loading projects and image assets from this device.</p></div>;
+    return <div className="boot-screen"><img src="./glassware-mark.svg" alt="" /><h1>Opening your local workbench…</h1><p>Loading projects and image assets from this device.</p></div>;
   }
   return <Editor key={project.id} initialProject={project} replaceProject={setProject} />;
 }
@@ -162,8 +159,8 @@ function Editor({
   initialProject,
   replaceProject,
 }: {
-  initialProject: ImageStitchProject;
-  replaceProject: (project: ImageStitchProject) => void;
+  initialProject: GlassWareProject;
+  replaceProject: (project: GlassWareProject) => void;
 }) {
   const canvasElement = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
@@ -186,12 +183,11 @@ function Editor({
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [message, setMessage] = useState("");
   const [isDraggingFile, setIsDraggingFile] = useState(false);
-  const [recentProjects, setRecentProjects] = useState<ImageStitchProject[]>([]);
+  const [recentProjects, setRecentProjects] = useState<GlassWareProject[]>([]);
   const [zoom, setZoom] = useState(1);
   const [selectedAssetSource, setSelectedAssetSource] = useState<AssetSource | null>(null);
   const [fontAssets, setFontAssets] = useState<StoredFontAsset[]>([]);
   const [fontLoading, setFontLoading] = useState<string | null>(null);
-  const [layerView, setLayerView] = useState<LayerView>("list");
   const [draggedLayerId, setDraggedLayerId] = useState<string | null>(null);
   const [layerDropTarget, setLayerDropTarget] = useState<LayerDropTarget | null>(null);
   const [signInOpen, setSignInOpen] = useState(false);
@@ -230,7 +226,7 @@ function Editor({
     };
   }, []);
 
-  function setCurrentProject(next: ImageStitchProject) {
+  function setCurrentProject(next: GlassWareProject) {
     projectRef.current = next;
     setProject(next);
   }
@@ -247,7 +243,7 @@ function Editor({
     }
   }
 
-  function displayDimensions(next: ImageStitchProject) {
+  function displayDimensions(next: GlassWareProject) {
     const scale = Math.min(MAX_STAGE_SIZE / next.canvas.width, MAX_STAGE_SIZE / next.canvas.height) * zoomRef.current;
     return {
       scale,
@@ -340,7 +336,7 @@ function Editor({
     textarea.setSelectionRange(textarea.value.length, textarea.value.length);
   }
 
-  async function renderProject(next: ImageStitchProject, selectAfter: string | null = null) {
+  async function renderProject(next: GlassWareProject, selectAfter: string | null = null) {
     const stage = stageRef.current;
     const layer = layerRef.current;
     if (!stage || !layer) return;
@@ -755,7 +751,7 @@ function Editor({
         font = await downloadGoogleFont(family);
         await saveFontAsset(font);
         setFontAssets((current) => [...current.filter((asset) => asset.id !== font!.id), font!].sort((a, b) => a.family.localeCompare(b.family)));
-        setMessage(`${family} downloaded for offline use in ImageStitch.`);
+        setMessage(`${family} downloaded for offline use in GlassWare.`);
       }
       if (font) await registerFont(font);
       const node = layerRef.current && findDesignNode(layerRef.current, targetId);
@@ -962,10 +958,22 @@ function Editor({
     void persist(next);
   }
 
-  function layerDragStart(event: React.DragEvent, designId: string) {
+  function layerDragStart(event: React.DragEvent<HTMLDivElement>, designId: string) {
     setDraggedLayerId(designId);
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", designId);
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const preview = event.currentTarget.cloneNode(true) as HTMLDivElement;
+    preview.classList.remove("dragging", "drop-before", "drop-after");
+    preview.classList.add("layer-drag-preview");
+    preview.style.width = `${bounds.width}px`;
+    document.body.append(preview);
+    event.dataTransfer.setDragImage(
+      preview,
+      Math.max(0, Math.min(bounds.width, event.clientX - bounds.left)),
+      Math.max(0, Math.min(bounds.height, event.clientY - bounds.top)),
+    );
+    window.setTimeout(() => preview.remove(), 0);
   }
 
   function layerDragOver(event: React.DragEvent, targetId: string) {
@@ -1064,7 +1072,7 @@ function Editor({
   async function exportProjectFile() {
     try {
       const bundle = await buildProjectBundle(projectRef.current);
-      downloadTextFile(JSON.stringify(bundle, null, 2), `${safeFilename(projectRef.current.name)}.imagestitch.json`);
+      downloadTextFile(JSON.stringify(bundle, null, 2), `${safeFilename(projectRef.current.name)}.glassware.json`);
     } catch (error) {
       console.error(error);
       setMessage("The project file could not be prepared.");
@@ -1111,67 +1119,31 @@ function Editor({
     if (activeTool === "Layers") {
       return (
         <div className="layers-panel">
-          <div className="panel-heading layer-heading">
-            <div><p>DOCUMENT STACK</p><h1>Layers</h1></div>
-            <div className="layer-view-switch" aria-label="Layer view">
-              <button className={layerView === "list" ? "active" : ""} title="Layer list" aria-label="Layer list" onClick={() => setLayerView("list")}><List size={15} /></button>
-              <button className={layerView === "depth" ? "active" : ""} title="3D layer depth" aria-label="3D layer depth" onClick={() => setLayerView("depth")}><Box size={15} /></button>
-            </div>
-          </div>
-          {layerView === "list" ? (
-            <div className="layer-list">
-              {[...project.objects].reverse().map((object) => {
-                const dropClass = layerDropTarget?.id === object.id ? `drop-${layerDropTarget.edge}` : "";
-                return (
-                  <div
-                    className={`layer-row ${selectedId === object.id ? "selected" : ""} ${draggedLayerId === object.id ? "dragging" : ""} ${dropClass}`}
-                    key={object.id}
-                    onDragOver={(event) => layerDragOver(event, object.id)}
-                    onDrop={(event) => layerDrop(event, object.id)}
-                  >
-                    <button
-                      className="layer-drag-handle"
-                      draggable
-                      title={`Drag ${object.name} to reorder`}
-                      aria-label={`Drag ${object.name} to reorder`}
-                      onDragStart={(event) => layerDragStart(event, object.id)}
-                      onDragEnd={finishLayerDrag}
-                    ><GripVertical size={15} /></button>
-                    <button className="layer-icon-button" title={object.visible ? "Hide layer" : "Show layer"} aria-label={object.visible ? "Hide layer" : "Show layer"} onClick={() => toggleVisibility(object.id)}>{object.visible ? <Eye size={15} /> : <EyeOff size={15} />}</button>
-                    <button className="layer-main" title={`Select ${object.name}`} onClick={() => selectById(object.id)}>
-                      <span className={`layer-thumbnail kind-${object.kind}`}>{object.kind === "text" ? <Type size={18} /> : object.kind === "image" ? <ImagePlus size={17} /> : <Shapes size={17} />}</span>
-                      <span><strong>{object.name}</strong><small>{object.kind}</small></span>
-                    </button>
-                    <button className="layer-icon-button" title={object.locked ? "Unlock layer" : "Lock layer"} aria-label={object.locked ? "Unlock layer" : "Lock layer"} onClick={() => toggleLock(object.id)}>{object.locked ? <Lock size={14} /> : <Unlock size={14} />}</button>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="depth-view" aria-label="3D visualization of layer depth">
-              <div className="depth-axis"><span>FRONT</span><i /><span>BACK</span></div>
-              <div className="depth-stack" style={{ height: `${Math.max(280, project.objects.length * 50 + 110)}px` }}>
-                {[...project.objects].reverse().map((object, index) => (
-                  <button
-                    className={`depth-plane kind-${object.kind} ${selectedId === object.id ? "selected" : ""} ${!object.visible ? "hidden-layer" : ""}`}
-                    style={{
-                      "--depth-x": `${index * 3}px`,
-                      "--depth-y": `${index * 48}px`,
-                      zIndex: project.objects.length - index,
-                    } as React.CSSProperties}
-                    key={object.id}
-                    title={`Select ${object.name}, depth ${project.objects.length - index} of ${project.objects.length}`}
-                    onClick={() => selectById(object.id)}
-                  >
-                    <span className="depth-plane-index">Z{String(project.objects.length - index).padStart(2, "0")}</span>
-                    <span className="depth-plane-name"><strong>{object.name}</strong><small>{object.kind}{object.locked ? " · locked" : ""}</small></span>
-                    {!object.visible && <EyeOff size={14} />}
+          <div className="panel-heading"><p>DOCUMENT STACK</p><h1>Layers</h1></div>
+          <div className="layer-list">
+            {[...project.objects].reverse().map((object) => {
+              const dropClass = layerDropTarget?.id === object.id ? `drop-${layerDropTarget.edge}` : "";
+              return (
+                <div
+                  className={`layer-row ${selectedId === object.id ? "selected" : ""} ${draggedLayerId === object.id ? "dragging" : ""} ${dropClass}`}
+                  draggable
+                  key={object.id}
+                  onDragStart={(event) => layerDragStart(event, object.id)}
+                  onDragEnd={finishLayerDrag}
+                  onDragOver={(event) => layerDragOver(event, object.id)}
+                  onDrop={(event) => layerDrop(event, object.id)}
+                >
+                  <button className="layer-drag-handle" title={`Drag ${object.name} to reorder`} aria-label={`Drag ${object.name} to reorder`}><GripVertical size={15} /></button>
+                  <button className="layer-icon-button" title={object.visible ? "Hide layer" : "Show layer"} aria-label={object.visible ? "Hide layer" : "Show layer"} onClick={() => toggleVisibility(object.id)}>{object.visible ? <Eye size={15} /> : <EyeOff size={15} />}</button>
+                  <button className="layer-main" title={`Select ${object.name}`} onClick={() => selectById(object.id)}>
+                    <span className={`layer-thumbnail kind-${object.kind}`}>{object.kind === "text" ? <Type size={18} /> : object.kind === "image" ? <ImagePlus size={17} /> : <Shapes size={17} />}</span>
+                    <span><strong>{object.name}</strong><small>{object.kind}</small></span>
                   </button>
-                ))}
-              </div>
-              <p className="depth-note">Front layers render above the planes behind them. Select a plane here, then use the arrows below—or switch to List and drag it.</p>
-            </div>
-          )}
+                  <button className="layer-icon-button" title={object.locked ? "Unlock layer" : "Lock layer"} aria-label={object.locked ? "Unlock layer" : "Lock layer"} onClick={() => toggleLock(object.id)}>{object.locked ? <Lock size={14} /> : <Unlock size={14} />}</button>
+                </div>
+              );
+            })}
+          </div>
           {!project.objects.length && <p className="empty-note">This artboard is empty. Add text, a shape, or an image to begin.</p>}
           <div className="layer-toolbar" aria-label="Layer actions">
             <button title="Add text layer" aria-label="Add text layer" onClick={() => void addText("body")}><Plus size={16} /></button>
@@ -1190,7 +1162,7 @@ function Editor({
           <div className="panel-heading"><p>LOCAL PROJECTS</p><h1>Files</h1></div>
           <div className="file-actions">
             <button onClick={() => void createNewProject()}><FilePlus2 size={18} /><span><strong>New project</strong><small>Start with an empty artboard</small></span></button>
-            <button onClick={() => projectInput.current?.click()}><FolderOpen size={18} /><span><strong>Open a project</strong><small>Import an .imagestitch.json file</small></span></button>
+            <button onClick={() => projectInput.current?.click()}><FolderOpen size={18} /><span><strong>Open a project</strong><small>Import an .glassware.json file</small></span></button>
             <button onClick={() => void exportProjectFile()}><Save size={18} /><span><strong>Save a portable copy</strong><small>Includes every local image asset</small></span></button>
           </div>
           {recentProjects.length > 1 && (
@@ -1262,8 +1234,8 @@ function Editor({
   return (
     <main className="workbench">
       <header className="topbar">
-        <button className="brand" onClick={() => setActiveTool("Files")} aria-label="Open ImageStitch files">
-          <img src="./image-stitch-mark.svg" alt="" /><span>ImageStitch</span><small>LOCAL WORKBENCH</small>
+        <button className="brand" onClick={() => setActiveTool("Files")} aria-label="Open GlassWare files">
+          <img src="./glassware-mark.svg" alt="" /><span>GlassWare</span><small>LOCAL WORKBENCH</small>
         </button>
         <label className="project-name">
           <span>Project</span>
@@ -1287,7 +1259,7 @@ function Editor({
         <Tool icon={<FolderOpen />} label="Files" active={activeTool === "Files"} onClick={() => setActiveTool("Files")} />
         <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(event) => handleUpload(event.target.files?.[0])} />
         <input ref={fontInput} type="file" accept=".woff,.woff2,.ttf,.otf,font/woff,font/woff2,font/ttf,font/otf" hidden onChange={(event) => void uploadFont(event.target.files?.[0])} />
-        <input ref={projectInput} type="file" accept=".json,.imagestitch.json,application/json" hidden onChange={(event) => void importProjectFile(event.target.files?.[0])} />
+        <input ref={projectInput} type="file" accept=".json,.glassware.json,.imagestitch.json,application/json" hidden onChange={(event) => void importProjectFile(event.target.files?.[0])} />
       </aside>
 
       <section className="sidepanel">{renderSidePanel()}</section>
@@ -1388,6 +1360,12 @@ function Editor({
         )}
         <div className="privacy-stamp"><span>LOCAL BY DEFAULT</span><p>Projects and original image assets are stored in this browser's private database.</p></div>
       </aside>
+      <footer className="product-footer">
+        <a href="https://labs.wiplash.ai/" target="_blank" rel="noreferrer" title="Visit Wiplash Labs">Wiplash Labs</a>
+        <span aria-hidden="true" />
+        <a href="https://wiplash.ai/" target="_blank" rel="noreferrer" title="Visit Wiplash.ai">Produced by Wiplash.ai</a>
+        <a href="https://wiplash.ai/legal/privacy" target="_blank" rel="noreferrer" title="Read the Wiplash privacy policy">Privacy</a>
+      </footer>
       <SignInModal model={accountConnections} open={signInOpen} onClose={() => setSignInOpen(false)} />
     </main>
   );
@@ -1661,7 +1639,7 @@ function ImagePanel({
             ))}
           </div>
         )}
-        <p className="openverse-note">Openverse indexes openly licensed work. ImageStitch stores its source receipt, but you should verify the license before publishing.</p>
+        <p className="openverse-note">Openverse indexes openly licensed work. GlassWare stores its source receipt, but you should verify the license before publishing.</p>
       </div>
     </>
   );

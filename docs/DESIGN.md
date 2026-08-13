@@ -1,8 +1,8 @@
-# ImageStitch product and interaction design
+# GlassWare product and interaction design
 
 ## Design premise
 
-ImageStitch is a focused creative workstation: white panels, black tools, and a
+GlassWare is a focused creative workstation: white panels, black tools, and a
 neutral-gray stage around the user's artwork. The structure borrows the
 confidence and precision of professional image editors while keeping labels,
 targets, and presets approachable for frequent non-designers.
@@ -12,7 +12,7 @@ Figma, and Linear, but uses its own layout, identity, copy, and local-first AI
 review model. Color belongs primarily to the work being created, not the app
 chrome competing with it.
 
-The one deliberate exception is the ImageStitch mark: a flat, black-framed
+The one deliberate exception is the GlassWare mark: a flat, black-framed
 stained-glass pane assembled from crisp rainbow facets. It gives the product a
 recognizable creative signal while the surrounding workstation stays neutral.
 
@@ -51,10 +51,10 @@ states are intentionally excluded from application chrome.
 5. **White inspector:** properties for the current selection only.
 6. **Status receipt:** local-save state, revision, export warnings, and AI scope.
 
-The Layers panel supports direct drag ordering and a compact exploded-stack
-mode. The 3D view is functional information design: planes are labeled with
-their z-index, front-to-back direction remains explicit, and every plane stays
-selectable. It does not add ornamental depth to the rest of the interface.
+The Layers panel uses a compact Photoshop/GIMP-inspired stack. Dragging any
+layer row lifts a preview of the full card, and insertion rules show exactly
+where it will land. Visibility, lock, duplicate, raise, and lower controls stay
+available without changing modes.
 
 ## Interaction rules
 
@@ -67,7 +67,7 @@ selectable. It does not add ornamental depth to the rest of the interface.
 - Continuous controls may preview live, but one completed gesture creates one
   undo revision.
 - Sign-in appears as a focused modal rather than replacing a creative tool
-  panel. When the cloud account service is absent, ImageStitch clearly offers a
+  panel. When the cloud account service is absent, GlassWare clearly offers a
   browser-bound device profile and leaves cloud/provider actions unavailable.
 - Escape exits the current mode; Delete removes selected objects after undo is
   available; arrow keys nudge; Shift modifies constraints consistently.

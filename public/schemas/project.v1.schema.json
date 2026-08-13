@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://imagestitch.dev/schemas/project.v1.schema.json",
-  "title": "ImageStitch project manifest v1",
+  "$id": "https://labs.wiplash.ai/glassware/schemas/project.v1.schema.json",
+  "title": "GlassWare project manifest v1",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "id", "name", "residency", "createdAt", "updatedAt", "canvas", "objects", "revisions", "currentRevisionId"],
   "properties": {
-    "schemaVersion": { "const": "imagestitch.project.v1" },
+    "schemaVersion": { "const": "glassware.project.v1" },
     "id": { "type": "string", "format": "uuid" },
     "name": { "type": "string", "minLength": 1, "maxLength": 160 },
     "residency": { "const": "local" },

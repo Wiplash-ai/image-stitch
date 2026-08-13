@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://imagestitch.dev/schemas/bundle.v1.schema.json",
-  "title": "ImageStitch portable project bundle v1",
+  "$id": "https://labs.wiplash.ai/glassware/schemas/bundle.v1.schema.json",
+  "title": "GlassWare portable project bundle v1",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "exportedAt", "project", "assets"],
   "properties": {
-    "schemaVersion": { "const": "imagestitch.bundle.v1" },
+    "schemaVersion": { "const": "glassware.bundle.v1" },
     "exportedAt": { "type": "string", "format": "date-time" },
     "project": { "$ref": "project.v1.schema.json" },
     "assets": {

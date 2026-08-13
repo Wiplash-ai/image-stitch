@@ -1,12 +1,12 @@
-# ImageStitch
+# GlassWare
 
-ImageStitch is a local-first creative workbench from Wiplash Labs for making
+GlassWare is a local-first creative workbench from Wiplash Labs for making
 social graphics, cards, flyers, banners, print pieces, and polished photo edits.
 It combines a manual canvas editor with reviewable AI edit plans and a useful
 browser extension for capturing the page already in front of you.
 
 The goal is a friendly, capable alternative to the everyday Canva and PicMonkey
-workflow—not a thin AI wrapper. ImageStitch remains useful without an account,
+workflow—not a thin AI wrapper. GlassWare remains useful without an account,
 an upload, or an AI connection.
 
 ## Current status
@@ -26,7 +26,7 @@ Pre-alpha with a dependable local editing slice:
   assets, included in portable project bundles.
 - Square, portrait, story, and landscape presets.
 - Photoshop/GIMP-inspired layer stack with drag-and-drop ordering, an exploded
-  3D z-index view, visibility, lock, duplicate, create, delete, rename, and
+  full-card drag ordering, visibility, lock, duplicate, create, delete, rename, and
   object inspector controls.
 - Snapshot undo/redo, keyboard nudging/shortcuts, and visible autosave receipts.
 - IndexedDB projects and original image blobs with reload recovery.
@@ -52,7 +52,7 @@ Pre-alpha with a dependable local editing slice:
   API clients, MCP contracts, public skills, and sanitized examples.
 - **Optional private services:** user authentication, encrypted BYOK vault,
   synchronization, managed agent sandboxes, operational automation, and billing.
-- A ChatGPT subscription connects through an ImageStitch MCP plugin; it is not
+- A ChatGPT subscription connects through a GlassWare MCP plugin; it is not
   treated as API credit or converted into an API key.
 - User-supplied OpenAI API keys must never be embedded in browser or extension
   code. Production BYOK uses a server-side encrypted vault and opaque connection
@@ -73,7 +73,7 @@ npm run verify
 ```
 
 The unpacked extension is generated at
-`artifacts/image-stitch-extension`. Load that directory from
+`artifacts/glassware-extension`. Load that directory from
 `chrome://extensions` with Developer mode enabled.
 
 ## Plans and decisions

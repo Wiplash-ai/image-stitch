@@ -10,7 +10,7 @@ large initiatives in flight at once.
 ## Outcome
 
 Enable a frequent creator to complete ten representative everyday graphics in
-ImageStitch without data loss, developer assistance, or returning to another
+GlassWare without data loss, developer assistance, or returning to another
 editor for a basic layout or photo operation.
 
 ## Success measures
@@ -58,7 +58,7 @@ Dependency: export QA must land before claiming replacement-level reliability.
 
 Once the selection and command model is stable:
 
-- Validate `imagestitch.edit-plan.v1` fixtures and reject stale revisions,
+- Validate `glassware.edit-plan.v1` fixtures and reject stale revisions,
   unknown objects, or unsupported operations.
 - Add a proposal drawer showing rationale, data scope, affected objects, and a
   per-operation accept/reject choice.

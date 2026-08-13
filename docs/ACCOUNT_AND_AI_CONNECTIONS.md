@@ -2,7 +2,7 @@
 
 ## Product boundary
 
-ImageStitch remains useful without an account. Signing in does not upload a
+GlassWare remains useful without an account. Signing in does not upload a
 project, enable sync, or contact an AI provider. Accounts exist for explicit
 cloud features: optional sync, project-scoped plugin authorization, encrypted
 provider connections, sharing, and future team controls.
@@ -13,19 +13,22 @@ The public client supports two adapters:
   service is not configured. It never claims cloud authentication, enables
   sync, or creates pretend AI connections.
 - `service` talks to the optional private account service configured by
-  `VITE_IMAGESTITCH_ACCOUNT_API_URL`.
+  `VITE_GLASSWARE_ACCOUNT_API_URL`.
 
 The device adapter stores only a display profile. Cloud actions remain visibly
-unavailable. Production sign-in is a passwordless modal that hands email-link
-requests to the service adapter and receives sessions through protected cookies.
+unavailable. Production sign-in starts in the GlassWare modal and redirects to
+the shared Wiplash Keycloak realm through a confidential BFF. Google and GitHub
+are selected directly; GitLab is not offered for the GlassWare client. Sessions
+return through protected HTTP-only cookies, and Keycloak tokens never enter the
+browser app.
 
 ## Connection lanes
 
 ### ChatGPT/Codex plugin
 
-The subscribed OpenAI client performs reasoning and calls narrow ImageStitch MCP
-tools. The OpenAI host acts as the OAuth client, while ImageStitch's identity
-provider authorizes access to the user's ImageStitch account and project. The
+The subscribed OpenAI client performs reasoning and calls narrow GlassWare MCP
+tools. The OpenAI host acts as the OAuth client, while GlassWare's identity
+provider authorizes access to the user's GlassWare account and project. The
 editor never receives ChatGPT passwords, cookies, refresh tokens, or subscription
 credentials.
 
@@ -53,11 +56,11 @@ Official product references:
 The service base URL must use HTTPS, except for loopback development. Requests
 use `credentials: include`; the session credential belongs in a secure,
 HTTP-only, SameSite cookie. Every authenticated mutation includes the CSRF value
-returned by `GET /v1/account` as `X-ImageStitch-CSRF`.
+returned by `GET /v1/account` as `X-GlassWare-CSRF`.
 
 ```text
 GET    /v1/account
-POST   /v1/auth/magic-links
+POST   /v1/auth/authorizations
 POST   /v1/auth/logout
 PATCH  /v1/account/preferences
 POST   /v1/connections/{kind}/authorizations

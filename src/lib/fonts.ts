@@ -71,7 +71,7 @@ export async function downloadGoogleFont(
   family: string,
   fetcher: typeof fetch = fetch,
 ): Promise<StoredFontAsset> {
-  if (!GOOGLE_FONT_CHOICES.some((font) => font.family === family)) throw new Error("That Google font is not in the ImageStitch catalog.");
+  if (!GOOGLE_FONT_CHOICES.some((font) => font.family === family)) throw new Error("That Google font is not in the GlassWare catalog.");
   const parameters = new URLSearchParams({ family, display: "swap" });
   const cssResponse = await fetcher(`${GOOGLE_CSS_API}?${parameters}`);
   if (!cssResponse.ok) throw new Error("Google Fonts is unavailable right now.");

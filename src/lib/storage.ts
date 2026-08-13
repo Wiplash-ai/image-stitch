@@ -1,5 +1,6 @@
-import { createProject, normalizeProject, type ImageStitchProject } from "./model";
+import { createProject, normalizeProject, type GlassWareProject } from "./model";
 
+// Keep the original database name so an in-place upgrade retains local projects and assets.
 const DATABASE_NAME = "imagestitch";
 const DATABASE_VERSION = 2;
 const PROJECT_STORE = "projects";
@@ -7,8 +8,9 @@ const ASSET_STORE = "assets";
 const FONT_STORE = "fonts";
 const SETTING_STORE = "settings";
 const ACTIVE_PROJECT_KEY = "activeProjectId";
-const LEGACY_PROJECT_KEY = "imagestitch.project.v1";
-const CAPTURE_KEY = "imagestitch.pendingCapture.v1";
+const LEGACY_PROJECT_KEYS = ["glassware.project.v1", "imagestitch.project.v1"] as const;
+const CAPTURE_KEY = "glassware.pendingCapture.v1";
+const LEGACY_CAPTURE_KEY = "imagestitch.pendingCapture.v1";
 
 export interface AssetSource {
   provider: "openverse";
@@ -98,13 +100,13 @@ function openDatabase(): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => {
       databasePromise = null;
-      reject(request.error ?? new Error("Unable to open the ImageStitch database"));
+      reject(request.error ?? new Error("Unable to open the GlassWare database"));
     };
   });
   return databasePromise;
 }
 
-export async function saveProject(project: ImageStitchProject): Promise<void> {
+export async function saveProject(project: GlassWareProject): Promise<void> {
   const database = await openDatabase();
   const transaction = database.transaction([PROJECT_STORE, SETTING_STORE], "readwrite");
   transaction.objectStore(PROJECT_STORE).put(project);
@@ -112,20 +114,20 @@ export async function saveProject(project: ImageStitchProject): Promise<void> {
   await transactionComplete(transaction);
 }
 
-export async function loadProject(projectId: string): Promise<ImageStitchProject | null> {
+export async function loadProject(projectId: string): Promise<GlassWareProject | null> {
   const database = await openDatabase();
   const transaction = database.transaction(PROJECT_STORE, "readonly");
   const value = await requestResult(transaction.objectStore(PROJECT_STORE).get(projectId));
   return normalizeProject(value);
 }
 
-export async function listProjects(): Promise<ImageStitchProject[]> {
+export async function listProjects(): Promise<GlassWareProject[]> {
   const database = await openDatabase();
   const transaction = database.transaction(PROJECT_STORE, "readonly");
   const values = await requestResult(transaction.objectStore(PROJECT_STORE).getAll());
   return values
     .map(normalizeProject)
-    .filter((project): project is ImageStitchProject => Boolean(project))
+    .filter((project): project is GlassWareProject => Boolean(project))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
@@ -138,16 +140,19 @@ async function loadActiveProjectId(): Promise<string | null> {
   return setting?.value ?? null;
 }
 
-function loadLegacyProject(): ImageStitchProject | null {
+function loadLegacyProject(): GlassWareProject | null {
   try {
-    const raw = globalThis.localStorage?.getItem(LEGACY_PROJECT_KEY);
-    return raw ? normalizeProject(JSON.parse(raw)) : null;
+    for (const key of LEGACY_PROJECT_KEYS) {
+      const raw = globalThis.localStorage?.getItem(key);
+      if (raw) return normalizeProject(JSON.parse(raw));
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
-export async function bootstrapProject(): Promise<ImageStitchProject> {
+export async function bootstrapProject(): Promise<GlassWareProject> {
   const activeProjectId = await loadActiveProjectId();
   if (activeProjectId) {
     const activeProject = await loadProject(activeProjectId);
@@ -163,7 +168,7 @@ export async function bootstrapProject(): Promise<ImageStitchProject> {
   const project = loadLegacyProject() ?? createProject();
   await saveProject(project);
   try {
-    globalThis.localStorage?.removeItem(LEGACY_PROJECT_KEY);
+    LEGACY_PROJECT_KEYS.forEach((key) => globalThis.localStorage?.removeItem(key));
   } catch {
     // Private browsing can expose localStorage while still rejecting writes.
   }
@@ -249,10 +254,10 @@ export async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
 
 export async function consumeExtensionCapture(): Promise<string | null> {
   if (typeof chrome === "undefined" || !chrome.storage?.local) return null;
-  const result = await chrome.storage.local.get(CAPTURE_KEY);
-  const capture = result[CAPTURE_KEY] as { dataUrl?: string } | undefined;
+  const result = await chrome.storage.local.get([CAPTURE_KEY, LEGACY_CAPTURE_KEY]);
+  const capture = (result[CAPTURE_KEY] ?? result[LEGACY_CAPTURE_KEY]) as { dataUrl?: string } | undefined;
   if (!capture?.dataUrl) return null;
-  await chrome.storage.local.remove(CAPTURE_KEY);
+  await chrome.storage.local.remove([CAPTURE_KEY, LEGACY_CAPTURE_KEY]);
   return capture.dataUrl;
 }
 

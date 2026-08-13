@@ -44,7 +44,7 @@ export function AccountPanel({ model, openSignIn }: { model: AccountConnectionsM
             <h3>Keep creating without an account.</h3>
             <p>Sign in only when you want optional sync, a ChatGPT/Codex plugin connection, or an encrypted API-key vault.</p>
           </section>
-          <button className="account-sign-in-button" onClick={openSignIn}>Sign in to ImageStitch</button>
+          <button className="account-sign-in-button" onClick={openSignIn}>Sign in to GlassWare</button>
         </>
       )}
       {(model.notice || model.error) && (

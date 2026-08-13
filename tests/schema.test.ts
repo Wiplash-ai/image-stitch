@@ -23,7 +23,7 @@ describe("public JSON schemas", () => {
     const project = createProject("Portable fixture", false);
     const validate = validator().compile(bundleSchema);
     expect(validate({
-      schemaVersion: "imagestitch.bundle.v1",
+      schemaVersion: "glassware.bundle.v1",
       exportedAt: new Date().toISOString(),
       project,
       assets: [],
@@ -57,7 +57,7 @@ describe("public JSON schemas", () => {
     const project = createProject("Attributed image", false);
     const validate = validator().compile(bundleSchema);
     expect(validate({
-      schemaVersion: "imagestitch.bundle.v1",
+      schemaVersion: "glassware.bundle.v1",
       exportedAt: new Date().toISOString(),
       project,
       assets: [{
@@ -75,7 +75,7 @@ describe("public JSON schemas", () => {
     const project = createProject("Font bundle", false);
     const validate = validator().compile(bundleSchema);
     expect(validate({
-      schemaVersion: "imagestitch.bundle.v1",
+      schemaVersion: "glassware.bundle.v1",
       exportedAt: new Date().toISOString(),
       project,
       assets: [],
