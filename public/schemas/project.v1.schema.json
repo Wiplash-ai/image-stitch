@@ -56,7 +56,9 @@
         "lineHeight": { "type": "number", "exclusiveMinimum": 0 },
         "shape": { "enum": ["rect", "ellipse"] },
         "cornerRadius": { "type": "number", "minimum": 0 },
-        "assetId": { "type": "string", "format": "uuid" }
+        "assetId": { "type": "string", "format": "uuid" },
+        "crop": { "$ref": "#/$defs/crop" },
+        "adjustments": { "$ref": "#/$defs/imageAdjustments" }
       },
       "allOf": [
         {
@@ -72,6 +74,30 @@
           "then": { "required": ["assetId"] }
         }
       ]
+    },
+    "crop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y": { "type": "number", "minimum": 0, "maximum": 1 },
+        "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+      }
+    },
+    "imageAdjustments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["brightness", "contrast", "saturation", "blur", "grayscale", "sepia"],
+      "properties": {
+        "brightness": { "type": "number", "minimum": -1, "maximum": 1 },
+        "contrast": { "type": "number", "minimum": -100, "maximum": 100 },
+        "saturation": { "type": "number", "minimum": -2, "maximum": 2 },
+        "blur": { "type": "number", "minimum": 0, "maximum": 40 },
+        "grayscale": { "type": "boolean" },
+        "sepia": { "type": "boolean" }
+      }
     },
     "snapshot": {
       "type": "object",

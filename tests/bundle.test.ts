@@ -17,6 +17,8 @@ describe("portable project bundles", () => {
       kind: "image",
       name: "Photo",
       assetId,
+      crop: { x: 0, y: 0, width: 1, height: 1 },
+      adjustments: { brightness: 0, contrast: 0, saturation: 0, blur: 0, grayscale: false, sepia: false },
       x: 0,
       y: 0,
       width: 1,

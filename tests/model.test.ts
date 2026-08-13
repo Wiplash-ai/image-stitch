@@ -68,4 +68,23 @@ describe("ImageStitch project model", () => {
     expect(recovered?.canvas.background).toBe("#f8f0df");
     expect(recovered?.revisions[0].snapshot.objects).toEqual([]);
   });
+
+  it("adds non-destructive defaults when recovering a legacy image layer", () => {
+    const project = createProject("Legacy image", false);
+    const legacyImage = {
+      id: crypto.randomUUID(), kind: "image", name: "Photo", assetId: crypto.randomUUID(),
+      x: 0, y: 0, width: 400, height: 300, rotation: 0, scaleX: 1, scaleY: 1,
+      opacity: 1, visible: true, locked: false,
+    };
+    const recovered = normalizeProject({
+      ...project,
+      objects: [legacyImage],
+      revisions: [{ ...project.revisions[0], snapshot: { canvas: project.canvas, objects: [legacyImage] } }],
+    });
+    expect(recovered?.objects[0]).toMatchObject({
+      kind: "image",
+      crop: { x: 0, y: 0, width: 1, height: 1 },
+      adjustments: { brightness: 0, contrast: 0, saturation: 0, blur: 0, grayscale: false, sepia: false },
+    });
+  });
 });

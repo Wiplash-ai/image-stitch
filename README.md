@@ -19,6 +19,10 @@ Pre-alpha with a dependable local editing slice:
 - Layer reorder, rename, duplicate, lock, hide, delete, and object inspector.
 - Snapshot undo/redo, keyboard nudging/shortcuts, and visible autosave receipts.
 - IndexedDB projects and original image blobs with reload recovery.
+- Non-destructive centered crops, photo presets, brightness, contrast,
+  saturation, blur, grayscale, and sepia adjustments.
+- Typeface, size, weight, italic, alignment, line-height, snapping, and zoom
+  controls for more precise composition.
 - Full-size PNG, JPEG, and WebP exports plus portable project import/export.
 - Public project, portable bundle, and AI edit-plan schemas.
 - Manifest V3 extension with visible-page capture and a packaged copy of the

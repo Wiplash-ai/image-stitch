@@ -43,6 +43,24 @@ export interface ShapeDesignNode extends BaseDesignNode {
 export interface ImageDesignNode extends BaseDesignNode {
   kind: "image";
   assetId: string;
+  crop: NormalizedCrop;
+  adjustments: ImageAdjustments;
+}
+
+export interface NormalizedCrop {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ImageAdjustments {
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  blur: number;
+  grayscale: boolean;
+  sepia: boolean;
 }
 
 export type DesignNode = TextDesignNode | ShapeDesignNode | ImageDesignNode;
@@ -75,6 +93,16 @@ export interface ImageStitchProject {
 
 const DEFAULT_BACKGROUND = "#f8f0df";
 
+export const FULL_IMAGE_CROP: NormalizedCrop = { x: 0, y: 0, width: 1, height: 1 };
+export const DEFAULT_IMAGE_ADJUSTMENTS: ImageAdjustments = {
+  brightness: 0,
+  contrast: 0,
+  saturation: 0,
+  blur: 0,
+  grayscale: false,
+  sepia: false,
+};
+
 export const CANVAS_PRESETS: Record<Exclude<CanvasPreset, "custom">, CanvasSettings> = {
   square: { preset: "square", width: 1080, height: 1080, background: DEFAULT_BACKGROUND },
   portrait: { preset: "portrait", width: 1080, height: 1350, background: DEFAULT_BACKGROUND },
@@ -88,7 +116,9 @@ export const newId = () => crypto.randomUUID();
 function cloneSnapshot(snapshot: ProjectSnapshot): ProjectSnapshot {
   return {
     canvas: { ...snapshot.canvas },
-    objects: snapshot.objects.map((object) => ({ ...object })),
+    objects: snapshot.objects.map((object) => object.kind === "image"
+      ? { ...object, crop: { ...object.crop }, adjustments: { ...object.adjustments } }
+      : { ...object }),
   };
 }
 
@@ -304,7 +334,30 @@ function normalizeDesignNode(value: unknown): DesignNode | null {
   }
   if (node.kind === "image") {
     if (typeof node.assetId !== "string" || !node.assetId) return null;
-    return { ...common, kind: "image", assetId: node.assetId };
+    const cropValue = node.crop as Partial<NormalizedCrop> | undefined;
+    const crop: NormalizedCrop = cropValue &&
+      finiteNumber(cropValue.x, 0, 1) && finiteNumber(cropValue.y, 0, 1) &&
+      finiteNumber(cropValue.width, Number.EPSILON, 1) && finiteNumber(cropValue.height, Number.EPSILON, 1) &&
+      cropValue.x + cropValue.width <= 1.000001 && cropValue.y + cropValue.height <= 1.000001
+      ? { x: cropValue.x, y: cropValue.y, width: cropValue.width, height: cropValue.height }
+      : { ...FULL_IMAGE_CROP };
+    const adjustmentValue = node.adjustments as Partial<ImageAdjustments> | undefined;
+    const adjustments: ImageAdjustments = adjustmentValue &&
+      finiteNumber(adjustmentValue.brightness, -1, 1) &&
+      finiteNumber(adjustmentValue.contrast, -100, 100) &&
+      finiteNumber(adjustmentValue.saturation, -2, 2) &&
+      finiteNumber(adjustmentValue.blur, 0, 40) &&
+      typeof adjustmentValue.grayscale === "boolean" && typeof adjustmentValue.sepia === "boolean"
+      ? {
+          brightness: adjustmentValue.brightness,
+          contrast: adjustmentValue.contrast,
+          saturation: adjustmentValue.saturation,
+          blur: adjustmentValue.blur,
+          grayscale: adjustmentValue.grayscale,
+          sepia: adjustmentValue.sepia,
+        }
+      : { ...DEFAULT_IMAGE_ADJUSTMENTS };
+    return { ...common, kind: "image", assetId: node.assetId, crop, adjustments };
   }
   return null;
 }

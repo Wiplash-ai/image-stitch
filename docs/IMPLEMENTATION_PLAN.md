@@ -35,10 +35,15 @@ captures a visible tab, and loads that capture into its bundled editor.
 - [x] Layer panel: reorder, rename, duplicate, lock, and hide.
 - [ ] Grouping and multi-select.
 - [x] Core keyboard shortcuts, paste, and drop.
-- [ ] Alignment guides, snapping, rulers, and user-controlled zoom.
-- Text typography controls, local font upload, shapes, lines, borders, shadows.
-- Crop, rotate, flip, resize, opacity, blend modes, brightness, contrast,
-  saturation, temperature, tint, blur, sharpen, vignette, and filters.
+- [x] Alignment guides, object/artboard snapping, and user-controlled zoom.
+- [ ] Rulers and configurable snapping.
+- [x] Typeface, size, weight, italic, alignment, line-height, rectangle, and
+  ellipse controls.
+- [ ] Local font upload, lines, borders, and shadows.
+- [x] Non-destructive centered crop presets, opacity, brightness, contrast,
+  saturation, blur, grayscale, sepia, and named photo looks.
+- [ ] Interactive crop handles, rotate/flip, blend modes, temperature, tint,
+  sharpen, and vignette.
 - [x] PNG, JPEG, WebP, and portable project bundle export/import.
 - [ ] SVG and print-ready PDF export.
 
@@ -81,9 +86,9 @@ made without a clear user action and disclosed data scope.
 
 ## Near-term backlog
 
-1. Add crop/adjust/filter mode using Konva filters and pica resize.
-2. Add alignment guides, snapping, zoom, multi-select, and grouping.
-3. Expand typography controls, shape families, borders, and shadows.
+1. Add interactive crop handles, rotate/flip, and resize-quality controls.
+2. Add multi-select, grouping, rulers, and configurable snapping.
+3. Expand shape families, typography, local fonts, borders, and shadows.
 4. Add extension region selection, image context-menu import, and clipboard copy.
 5. Add recovery/quota handling and a true project gallery with thumbnails.
 6. Add SVG/PDF export and export-dimension pixel assertions.
