@@ -39,8 +39,10 @@ captures a visible tab, and loads that capture into its bundled editor.
 - [ ] Rulers and configurable snapping.
 - [x] Typeface, size, weight, italic, alignment, line-height, rectangle, and
   ellipse controls.
+- [x] Inline canvas text editing, searchable Google Font catalog, and local
+  WOFF/WOFF2/TTF/OTF upload with portable font embedding.
 - [x] Twelve-shape starter library including polygons, callouts, lines, and arrows.
-- [ ] Local font upload, borders, and shadows.
+- [ ] Borders and shadows.
 - [x] Non-destructive centered crop presets, opacity, brightness, contrast,
   saturation, blur, grayscale, sepia, and named photo looks.
 - [ ] Interactive crop handles, rotate/flip, blend modes, temperature, tint,

@@ -3,13 +3,16 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createProject } from "../src/lib/model";
 import {
   listAssets,
+  listFontAssets,
   listProjects,
   loadAsset,
   loadProject,
   resetStorageForTests,
   saveAsset,
+  saveFontAsset,
   saveProject,
   type StoredAsset,
+  type StoredFontAsset,
 } from "../src/lib/storage";
 
 afterEach(async () => {
@@ -40,5 +43,21 @@ describe("local project storage", () => {
     await saveAsset(asset);
     expect((await loadAsset(asset.id))?.blob).toBeInstanceOf(Blob);
     expect((await listAssets(project.id)).map((item) => item.name)).toEqual(["tiny.png"]);
+  });
+
+  it("stores installed font bytes for offline use", async () => {
+    const font: StoredFontAsset = {
+      id: "upload:mom-display",
+      family: "Mom Display",
+      name: "Mom-Display.woff2",
+      source: "upload",
+      license: "User supplied",
+      createdAt: "2026-08-13T00:00:00.000Z",
+      faces: [{ mimeType: "font/woff2", size: 4, style: "normal", weight: "400", blob: new Blob(["font"], { type: "font/woff2" }) }],
+    };
+    await saveFontAsset(font);
+    const stored = await listFontAssets();
+    expect(stored[0]).toMatchObject({ id: font.id, family: "Mom Display" });
+    expect(stored[0].faces[0].blob).toBeInstanceOf(Blob);
   });
 });

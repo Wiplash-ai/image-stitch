@@ -56,4 +56,26 @@ describe("portable project bundles", () => {
   it("rejects unrelated JSON", async () => {
     await expect(readProjectBundle('{"hello":"world"}')).rejects.toThrow("valid ImageStitch");
   });
+
+  it("restores embedded font files from a portable project", async () => {
+    const source = createProject("Font card", false);
+    const imported = await readProjectBundle(JSON.stringify({
+      schemaVersion: "imagestitch.bundle.v1",
+      exportedAt: "2026-08-13T00:00:00.000Z",
+      project: source,
+      assets: [],
+      fonts: [{
+        id: "google:dm-sans",
+        family: "DM Sans",
+        name: "DM Sans",
+        source: "google",
+        sourceUrl: "https://fonts.google.com/specimen/DM+Sans",
+        license: "Open source via Google Fonts",
+        createdAt: "2026-08-13T00:00:00.000Z",
+        faces: [{ mimeType: "font/woff2", size: 1, style: "normal", weight: "400", dataUrl: "data:font/woff2;base64,AA==" }],
+      }],
+    }));
+    expect(imported.fonts[0]).toMatchObject({ family: "DM Sans", source: "google" });
+    expect(imported.fonts[0].faces[0].blob).toBeInstanceOf(Blob);
+  });
 });

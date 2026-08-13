@@ -109,7 +109,11 @@ try {
   const fillHex = page.getByLabel("Fill hex value");
   await fillHex.fill("#3f7fff");
   await fillHex.press("Enter");
-  const shapeSelect = page.getByLabel("Shape");
+  await page.getByRole("button", { name: "Undo" }).click();
+  assert(await page.getByLabel("Fill hex value").inputValue() === "#d9d9d9", "Undo should restore the shape fill before the color change");
+  await page.getByRole("button", { name: "Redo" }).click();
+  assert(await page.getByLabel("Fill hex value").inputValue() === "#3f7fff", "Redo should restore the committed shape fill");
+  const shapeSelect = page.locator(".shape-select select");
   for (const shape of ["rect", "rounded-rect", "ellipse", "triangle", "diamond", "pentagon", "hexagon", "heart", "speech-bubble", "line", "arrow", "star"]) {
     await shapeSelect.selectOption(shape);
     assert(await shapeSelect.inputValue() === shape, `The ${shape} renderer should remain selectable`);
@@ -120,6 +124,15 @@ try {
   assert(await page.getByText("Bring in an image").count() === 0, "Text should not show image-upload settings");
   await page.screenshot({ path: "artifacts/text-panel-smoke.png", fullPage: true });
   await page.getByRole("button", { name: "Add a heading" }).click();
+  const inlineCanvas = await page.locator(".design-canvas").boundingBox();
+  const inlineScale = inlineCanvas.width / 1080;
+  await page.mouse.dblclick(inlineCanvas.x + 270 * inlineScale, inlineCanvas.y + 250 * inlineScale);
+  const inlineEditor = page.locator(".inline-text-editor");
+  await inlineEditor.waitFor();
+  await inlineEditor.fill("Inline canvas headline");
+  await inlineEditor.press("Control+Enter");
+  assert(await page.locator(".inspector textarea").inputValue() === "Inline canvas headline", "Double-click text editing should commit canvas text");
+  assert(await page.getByRole("button", { name: "Align left" }).getAttribute("title") === "Align left", "Alignment icons should expose tooltips");
   const png = await page.screenshot({ type: "png", clip: { x: 0, y: 0, width: 120, height: 60 } });
   openImagePng = png;
   await page.locator('input[type="file"][accept^="image/"]').setInputFiles({ name: "smoke.png", mimeType: "image/png", buffer: png });
@@ -143,15 +156,20 @@ try {
   await brightness.press("ArrowRight");
 
   const canvasBeforeZoom = await page.locator(".design-canvas").boundingBox();
-  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.mouse.move(canvasBeforeZoom.x + canvasBeforeZoom.width / 2, canvasBeforeZoom.y + canvasBeforeZoom.height / 2);
+  await page.mouse.wheel(0, -120);
   await page.waitForTimeout(150);
   const canvasAfterZoom = await page.locator(".design-canvas").boundingBox();
-  assert(canvasAfterZoom.width > canvasBeforeZoom.width, "Zoom in should enlarge the working artboard");
+  assert(canvasAfterZoom.width > canvasBeforeZoom.width, "Scrolling over the canvas should zoom in around the pointer");
   await page.locator(".zoom-controls button").nth(1).click();
 
   await page.getByRole("button", { name: "Layers" }).click();
   await page.locator(".layer-row").filter({ hasText: "Headline" }).locator(".layer-main").click();
-  await page.getByLabel("Typeface").selectOption("Helvetica");
+  await page.getByLabel("Typeface", { exact: true }).click();
+  assert(await page.locator(".font-group").filter({ hasText: "Free Google Fonts" }).locator(".font-option").count() === 22, "The typeface picker should expose the curated Google Fonts catalog");
+  await page.screenshot({ path: "artifacts/font-picker-smoke.png", fullPage: true });
+  await page.locator(".font-option").filter({ hasText: "Georgia" }).click();
+  assert((await page.getByLabel("Typeface", { exact: true }).innerText()).includes("Georgia"), "The custom typeface picker should apply a system font");
 
   await page.reload({ waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Layers" }).click();
@@ -201,7 +219,8 @@ try {
   assert(editedPhoto.adjustments.contrast === 22 && editedPhoto.adjustments.brightness === 0.05, "Portable projects should retain photo adjustments");
   assert(editedPhoto.crop.width < 1 || editedPhoto.crop.height < 1, "Portable projects should retain non-destructive crops");
   assert(Math.abs(editedPhoto.x - 510) < 0.01, "Near-center drags should snap the cropped photo to the artboard center");
-  assert(projectBundle.project.objects.find((object) => object.name === "Headline").fontFamily === "Helvetica", "Portable projects should retain typography edits");
+  assert(projectBundle.project.objects.find((object) => object.name === "Headline").fontFamily === "Georgia", "Portable projects should retain typography edits");
+  assert(projectBundle.project.objects.find((object) => object.text === "Inline canvas headline"), "Portable projects should retain inline canvas text edits");
 
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.getByLabel("Email address").fill("mom.example@example.com");
@@ -220,7 +239,7 @@ try {
   await page.locator(".connection-card").filter({ hasText: "ChatGPT / Codex" }).getByText("Preview connected").waitFor();
   await page.screenshot({ path: "artifacts/account-ai-connections-smoke.png", fullPage: true });
   assert(browserErrors.length === 0, `Browser emitted errors:\n${browserErrors.join("\n")}`);
-  process.stdout.write("ImageStitch browser smoke passed: task-specific tools, color input, shape library, open image search, attribution, persistence, edits, exports, account preview, and AI receipts.\n");
+  process.stdout.write("ImageStitch browser smoke passed: inline text, font picker, transactional colors, wheel zoom, layers, open image search, persistence, exports, account preview, and AI receipts.\n");
 } finally {
   await browser?.close();
   server.kill("SIGTERM");

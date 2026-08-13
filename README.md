@@ -19,19 +19,22 @@ Pre-alpha with a dependable local editing slice:
 - Twelve editable shape primitives and heading, subheading, and body-text
   presets.
 - Unrestricted color-wheel and hex controls with shortcut palettes for
-  artboards, text, and shape fills.
+  artboards, text, and shape fills, with one-step undo for committed colors.
 - Local upload, paste, drag/drop, browser-extension capture, and openly
   licensed image search through Openverse.
 - Durable creator, source, license, and attribution receipts for searched image
   assets, included in portable project bundles.
 - Square, portrait, story, and landscape presets.
-- Layer reorder, rename, duplicate, lock, hide, delete, and object inspector.
+- Photoshop/GIMP-inspired layer stack with visibility, lock, reorder,
+  duplicate, create, delete, rename, and object inspector controls.
 - Snapshot undo/redo, keyboard nudging/shortcuts, and visible autosave receipts.
 - IndexedDB projects and original image blobs with reload recovery.
 - Non-destructive centered crops, photo presets, brightness, contrast,
   saturation, blur, grayscale, and sepia adjustments.
-- Typeface, size, weight, italic, alignment, line-height, snapping, and zoom
-  controls for more precise composition.
+- Inline canvas text editing plus a searchable typeface picker, 22 curated
+  open-source Google Fonts, local font-file upload, standard alignment icons,
+  and precise size, style, line-height, snapping, and pointer-centered wheel
+  zoom controls.
 - Full-size PNG, JPEG, and WebP exports plus portable project import/export.
 - Public project, portable bundle, and AI edit-plan schemas.
 - Optional account shell with a visibly local-only preview adapter and a secure

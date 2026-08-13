@@ -1,5 +1,12 @@
 import { newId, normalizeProject, type DesignNode, type ImageStitchProject } from "./model";
-import { dataUrlToBlob, listAssets, type StoredAsset } from "./storage";
+import {
+  dataUrlToBlob,
+  listAssets,
+  listFontAssets,
+  type StoredAsset,
+  type StoredFontAsset,
+  type StoredFontFace,
+} from "./storage";
 
 const BUNDLE_SCHEMA = "imagestitch.bundle.v1" as const;
 
@@ -7,11 +14,20 @@ interface PortableAsset extends Omit<StoredAsset, "blob"> {
   dataUrl: string;
 }
 
+interface PortableFontFace extends Omit<StoredFontFace, "blob"> {
+  dataUrl: string;
+}
+
+interface PortableFont extends Omit<StoredFontAsset, "faces"> {
+  faces: PortableFontFace[];
+}
+
 export interface ProjectBundle {
   schemaVersion: typeof BUNDLE_SCHEMA;
   exportedAt: string;
   project: ImageStitchProject;
   assets: PortableAsset[];
+  fonts?: PortableFont[];
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -25,6 +41,8 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 
 export async function buildProjectBundle(project: ImageStitchProject): Promise<ProjectBundle> {
   const assets = await listAssets(project.id);
+  const usedFamilies = new Set(project.objects.filter((object) => object.kind === "text").map((object) => object.fontFamily));
+  const fonts = (await listFontAssets()).filter((font) => usedFamilies.has(font.family));
   return {
     schemaVersion: BUNDLE_SCHEMA,
     exportedAt: new Date().toISOString(),
@@ -32,6 +50,10 @@ export async function buildProjectBundle(project: ImageStitchProject): Promise<P
     assets: await Promise.all(
       assets.map(async ({ blob, ...asset }) => ({ ...asset, dataUrl: await blobToDataUrl(blob) })),
     ),
+    fonts: await Promise.all(fonts.map(async (font) => ({
+      ...font,
+      faces: await Promise.all(font.faces.map(async ({ blob, ...face }) => ({ ...face, dataUrl: await blobToDataUrl(blob) }))),
+    }))),
   };
 }
 
@@ -42,6 +64,7 @@ function remapNode(node: DesignNode, assetIds: Map<string, string>): DesignNode 
 export async function readProjectBundle(text: string): Promise<{
   project: ImageStitchProject;
   assets: StoredAsset[];
+  fonts: StoredFontAsset[];
 }> {
   const parsed = JSON.parse(text) as Partial<ProjectBundle>;
   if (parsed.schemaVersion !== BUNDLE_SCHEMA || !parsed.project || !Array.isArray(parsed.assets)) {
@@ -88,7 +111,15 @@ export async function readProjectBundle(text: string): Promise<{
       };
     }),
   );
-  return { project, assets };
+  const fonts = await Promise.all((parsed.fonts ?? []).map(async (font) => ({
+    ...font,
+    faces: await Promise.all(font.faces.map(async (face) => {
+      const { dataUrl, ...metadata } = face;
+      const blob = await dataUrlToBlob(dataUrl);
+      return { ...metadata, mimeType: blob.type || metadata.mimeType, size: blob.size, blob };
+    })),
+  })));
+  return { project, assets, fonts };
 }
 
 export function downloadTextFile(contents: string, filename: string, type = "application/json"): void {

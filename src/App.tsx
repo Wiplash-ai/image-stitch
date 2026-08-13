@@ -3,6 +3,9 @@ import Konva from "konva";
 import {
   Bold,
   BringToFront,
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
   ChevronDown,
   ChevronUp,
   Copy,
@@ -72,11 +75,14 @@ import {
   createStoredAsset,
   dataUrlToBlob,
   listProjects,
+  listFontAssets,
   loadAsset,
   loadProject,
   saveAsset,
+  saveFontAsset,
   saveProject,
   type AssetSource,
+  type StoredFontAsset,
 } from "./lib/storage";
 import { buildProjectBundle, downloadTextFile, readProjectBundle, safeFilename } from "./lib/bundle";
 import { PHOTO_PRESETS, centerCropForAspect, fitDisplayBoxToAspect, type PhotoPreset } from "./lib/image-edits";
@@ -89,13 +95,19 @@ import {
   searchOpenverseImages,
   type OpenverseImage,
 } from "./lib/openverse";
+import {
+  GOOGLE_FONT_CHOICES,
+  SYSTEM_FONTS,
+  createUploadedFont,
+  downloadGoogleFont,
+  registerFont,
+} from "./lib/fonts";
 
 const COLOR_SWATCHES = [
   "#111111", "#ffffff", "#d9d9d9", "#8b8b8b", "#ff5d42", "#ffb000",
   "#ffe14d", "#35a36f", "#24a8a8", "#3f7fff", "#7454d6", "#e6499a",
 ];
 const MAX_STAGE_SIZE = 640;
-const FONT_FAMILIES = ["Georgia", "Arial", "Helvetica", "Trebuchet MS", "Courier New"];
 
 const SHAPE_OPTIONS: Array<{ kind: ShapeKind; label: string }> = [
   { kind: "rect", label: "Rectangle" },
@@ -155,9 +167,13 @@ function Editor({
   const projectRef = useRef(initialProject);
   const zoomRef = useRef(1);
   const renderVersionRef = useRef(0);
+  const zoomVersionRef = useRef(0);
   const saveVersionRef = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
+  const fontInput = useRef<HTMLInputElement>(null);
   const projectInput = useRef<HTMLInputElement>(null);
+  const canvasViewport = useRef<HTMLElement>(null);
+  const inlineEditorCleanupRef = useRef<(() => void) | null>(null);
   const [project, setProject] = useState(initialProject);
   const [selectedId, setSelectedId] = useState<string | null>(initialProject.objects[0]?.id ?? null);
   const [activeTool, setActiveTool] = useState<ToolName>("Select");
@@ -167,6 +183,8 @@ function Editor({
   const [recentProjects, setRecentProjects] = useState<ImageStitchProject[]>([]);
   const [zoom, setZoom] = useState(1);
   const [selectedAssetSource, setSelectedAssetSource] = useState<AssetSource | null>(null);
+  const [fontAssets, setFontAssets] = useState<StoredFontAsset[]>([]);
+  const [fontLoading, setFontLoading] = useState<string | null>(null);
   const accountConnections = useAccountConnections();
   const selectedObject = project.objects.find((object) => object.id === selectedId) ?? null;
   const selectedAssetId = selectedObject?.kind === "image" ? selectedObject.assetId : null;
@@ -188,6 +206,19 @@ function Editor({
       cancelled = true;
     };
   }, [selectedAssetId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listFontAssets().then(async (fonts) => {
+      await Promise.all(fonts.map((font) => registerFont(font).catch((error) => console.error(error))));
+      if (cancelled) return;
+      setFontAssets(fonts);
+      await renderProject(projectRef.current, selectedId);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function setCurrentProject(next: ImageStitchProject) {
     projectRef.current = next;
@@ -227,6 +258,76 @@ function Editor({
     transformer.rotateEnabled(!locked);
     setSelectedId(node ? designId : null);
     layer.batchDraw();
+  }
+
+  function beginInlineTextEdit(node: Konva.Text) {
+    if (node.getAttr("designLocked")) return;
+    inlineEditorCleanupRef.current?.();
+    const stage = stageRef.current;
+    const transformer = transformerRef.current;
+    if (!stage || !transformer) return;
+
+    const containerRect = stage.container().getBoundingClientRect();
+    const position = node.getAbsolutePosition();
+    const scale = node.getAbsoluteScale();
+    const textarea = document.createElement("textarea");
+    const original = node.text();
+    let closed = false;
+    textarea.className = "inline-text-editor";
+    textarea.setAttribute("aria-label", "Edit text on canvas");
+    textarea.value = original;
+    Object.assign(textarea.style, {
+      left: `${containerRect.left + position.x}px`,
+      top: `${containerRect.top + position.y}px`,
+      width: `${Math.max(80, node.width() * scale.x)}px`,
+      minHeight: `${Math.max(34, node.height() * scale.y)}px`,
+      fontFamily: node.fontFamily(),
+      fontSize: `${node.fontSize() * scale.y}px`,
+      fontStyle: node.fontStyle().includes("italic") ? "italic" : "normal",
+      fontWeight: node.fontStyle().includes("bold") ? "700" : "400",
+      lineHeight: String(node.lineHeight()),
+      color: String(node.fill()),
+      textAlign: node.align(),
+      transform: `rotate(${node.getAbsoluteRotation()}deg)`,
+    });
+    document.body.append(textarea);
+    node.hide();
+    transformer.hide();
+    layerRef.current?.batchDraw();
+
+    const finish = (commit: boolean) => {
+      if (closed) return;
+      closed = true;
+      textarea.removeEventListener("blur", onBlur);
+      textarea.removeEventListener("keydown", onKeyDown);
+      const nextText = textarea.value;
+      textarea.remove();
+      node.show();
+      transformer.show();
+      inlineEditorCleanupRef.current = null;
+      if (commit && nextText !== original) {
+        node.text(nextText);
+        transformer.forceUpdate();
+        commitCanvas("Text edited on canvas");
+      } else {
+        layerRef.current?.batchDraw();
+      }
+    };
+    const onBlur = () => finish(true);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        finish(false);
+      } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        finish(true);
+      }
+    };
+    textarea.addEventListener("blur", onBlur);
+    textarea.addEventListener("keydown", onKeyDown);
+    inlineEditorCleanupRef.current = () => finish(false);
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
   }
 
   async function renderProject(next: ImageStitchProject, selectAfter: string | null = null) {
@@ -341,6 +442,15 @@ function Editor({
         : target.findAncestor(`.${DESIGN_OBJECT_NAME}`);
       selectById(designNode ? String((designNode as Konva.Node).getAttr("designId")) : null);
     });
+    stage.on("dblclick dbltap", (event) => {
+      const target = event.target;
+      const designNode = target.hasName(DESIGN_OBJECT_NAME)
+        ? target
+        : target.findAncestor(`.${DESIGN_OBJECT_NAME}`);
+      if (!(designNode instanceof Konva.Text)) return;
+      selectById(String(designNode.getAttr("designId")));
+      beginInlineTextEdit(designNode);
+    });
     stage.on("dragmove", (event) => {
       if (event.target.hasName(DESIGN_OBJECT_NAME)) snapDraggedNode(event.target);
     });
@@ -364,11 +474,23 @@ function Editor({
     return () => {
       cancelled = true;
       renderVersionRef.current += 1;
+      inlineEditorCleanupRef.current?.();
       stage.destroy();
       stageRef.current = null;
       layerRef.current = null;
       transformerRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    const viewport = canvasViewport.current;
+    if (!viewport) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      void changeZoom(event.deltaY < 0 ? 0.1 : -0.1, { clientX: event.clientX, clientY: event.clientY });
+    };
+    viewport.addEventListener("wheel", onWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", onWheel);
   }, []);
 
   useEffect(() => {
@@ -555,17 +677,31 @@ function Editor({
     layerRef.current?.batchDraw();
   }
 
-  function setFill(color: string) {
+  function previewFill(color: string) {
     if (!selectedNodeRef.current || selectedObject?.kind === "image") return;
     applyDesignFill(selectedNodeRef.current, color);
     layerRef.current?.batchDraw();
+  }
+
+  function setFill(color: string) {
+    const current = projectRef.current.objects.find((object) => object.id === selectedId);
+    previewFill(color);
+    if (!current || current.kind === "image" || current.fill.toLowerCase() === color.toLowerCase()) return;
     commitCanvas("Color changed");
+  }
+
+  function previewBackground(color: string) {
+    const layer = layerRef.current;
+    if (!layer) return;
+    layer.findOne("#background")?.setAttr("fill", color);
+    layer.batchDraw();
   }
 
   function setBackground(color: string) {
     const layer = layerRef.current;
     if (!layer) return;
-    layer.findOne("#background")?.setAttr("fill", color);
+    previewBackground(color);
+    if (projectRef.current.canvas.background.toLowerCase() === color.toLowerCase()) return;
     const next = commitSnapshot(projectRef.current, "Background changed", {
       canvas: { ...projectRef.current.canvas, background: color },
       objects: serializeLayer(layer),
@@ -595,6 +731,57 @@ function Editor({
     transformerRef.current?.forceUpdate();
     layerRef.current?.batchDraw();
     if (commit) commitCanvas(summary);
+  }
+
+  async function chooseFont(family: string) {
+    const targetId = selectedId;
+    const target = targetId && projectRef.current.objects.find((object) => object.id === targetId);
+    if (!target || target.kind !== "text") return;
+    if (target.fontFamily === family) return;
+    setFontLoading(family);
+    try {
+      let font = fontAssets.find((asset) => asset.family === family);
+      if (!font && GOOGLE_FONT_CHOICES.some((choice) => choice.family === family)) {
+        font = await downloadGoogleFont(family);
+        await saveFontAsset(font);
+        setFontAssets((current) => [...current.filter((asset) => asset.id !== font!.id), font!].sort((a, b) => a.family.localeCompare(b.family)));
+        setMessage(`${family} downloaded for offline use in ImageStitch.`);
+      }
+      if (font) await registerFont(font);
+      const node = layerRef.current && findDesignNode(layerRef.current, targetId);
+      if (!(node instanceof Konva.Text)) return;
+      node.fontFamily(family);
+      transformerRef.current?.forceUpdate();
+      layerRef.current?.batchDraw();
+      commitCanvas("Typeface changed");
+    } catch (error) {
+      console.error(error);
+      setMessage(error instanceof Error ? error.message : `The ${family} font could not be loaded.`);
+    } finally {
+      setFontLoading(null);
+    }
+  }
+
+  async function uploadFont(file?: File) {
+    if (!file) return;
+    try {
+      if (file.size > 25 * 1024 * 1024 || !/\.(woff2?|ttf|otf)$/i.test(file.name)) {
+        throw new Error("Choose a WOFF, WOFF2, TTF, or OTF font file under 25 MB.");
+      }
+      const font = createUploadedFont(file);
+      setFontLoading(font.family);
+      await registerFont(font);
+      await saveFontAsset(font);
+      setFontAssets((current) => [...current.filter((asset) => asset.id !== font.id), font].sort((a, b) => a.family.localeCompare(b.family)));
+      await chooseFont(font.family);
+      setMessage(`${font.family} is installed locally. Confirm its license before sharing a portable project.`);
+    } catch (error) {
+      console.error(error);
+      setMessage(error instanceof Error ? error.message : "That font file could not be installed.");
+    } finally {
+      setFontLoading(null);
+      if (fontInput.current) fontInput.current.value = "";
+    }
   }
 
   function toggleTextStyle(style: "bold" | "italic") {
@@ -683,11 +870,29 @@ function Editor({
     commitCanvas("Photo edits reset");
   }
 
-  function changeZoom(delta: number | "fit") {
-    const nextZoom = delta === "fit" ? 1 : Math.min(1.75, Math.max(0.5, zoomRef.current + delta));
+  async function changeZoom(delta: number | "fit", anchor?: { clientX: number; clientY: number }) {
+    const viewport = canvasViewport.current;
+    const stage = stageRef.current;
+    const beforeRect = stage?.container().getBoundingClientRect();
+    const beforeScale = displayDimensions(projectRef.current).scale;
+    const designPoint = anchor && beforeRect
+      ? { x: (anchor.clientX - beforeRect.left) / beforeScale, y: (anchor.clientY - beforeRect.top) / beforeScale }
+      : null;
+    const nextZoom = delta === "fit" ? 1 : Math.min(3, Math.max(0.5, zoomRef.current + delta));
+    if (nextZoom === zoomRef.current) return;
+    const version = ++zoomVersionRef.current;
     zoomRef.current = nextZoom;
     setZoom(nextZoom);
-    void renderProject(projectRef.current, selectedId);
+    const activeSelection = selectedNodeRef.current?.getAttr("designId") as string | undefined;
+    await renderProject(projectRef.current, activeSelection ?? null);
+    if (!viewport || !anchor || !designPoint || version !== zoomVersionRef.current || !stageRef.current) return;
+    requestAnimationFrame(() => {
+      const nextRect = stageRef.current?.container().getBoundingClientRect();
+      if (!nextRect) return;
+      const nextScale = displayDimensions(projectRef.current).scale;
+      viewport.scrollLeft += nextRect.left + designPoint.x * nextScale - anchor.clientX;
+      viewport.scrollTop += nextRect.top + designPoint.y * nextScale - anchor.clientY;
+    });
   }
 
   function toggleVisibility(designId: string) {
@@ -762,7 +967,7 @@ function Editor({
     if (!canUndo(projectRef.current)) return;
     const next = undoProject(projectRef.current);
     setCurrentProject(next);
-    void renderProject(next);
+    void renderProject(next, selectedId);
     void persist(next);
   }
 
@@ -770,7 +975,7 @@ function Editor({
     if (!canRedo(projectRef.current)) return;
     const next = redoProject(projectRef.current);
     setCurrentProject(next);
-    void renderProject(next);
+    void renderProject(next, selectedId);
     void persist(next);
   }
 
@@ -814,6 +1019,10 @@ function Editor({
     try {
       const imported = await readProjectBundle(await file.text());
       for (const asset of imported.assets) await saveAsset(asset);
+      for (const font of imported.fonts) {
+        await registerFont(font);
+        await saveFontAsset(font);
+      }
       await saveProject(imported.project);
       replaceProject(imported.project);
     } catch (error) {
@@ -844,24 +1053,30 @@ function Editor({
   function renderSidePanel() {
     if (activeTool === "Layers") {
       return (
-        <>
+        <div className="layers-panel">
           <div className="panel-heading"><p>DOCUMENT STACK</p><h1>Layers</h1></div>
           <div className="layer-list">
             {[...project.objects].reverse().map((object) => (
               <div className={`layer-row ${selectedId === object.id ? "selected" : ""}`} key={object.id}>
-                <button className="layer-main" onClick={() => selectById(object.id)}>
-                  <span className={`layer-kind kind-${object.kind}`}>{object.kind === "text" ? "T" : object.kind === "image" ? "IMG" : "SH"}</span>
+                <button className="layer-icon-button" title={object.visible ? "Hide layer" : "Show layer"} aria-label={object.visible ? "Hide layer" : "Show layer"} onClick={() => toggleVisibility(object.id)}>{object.visible ? <Eye size={15} /> : <EyeOff size={15} />}</button>
+                <button className="layer-main" title={`Select ${object.name}`} onClick={() => selectById(object.id)}>
+                  <span className={`layer-thumbnail kind-${object.kind}`}>{object.kind === "text" ? <Type size={18} /> : object.kind === "image" ? <ImagePlus size={17} /> : <Shapes size={17} />}</span>
                   <span><strong>{object.name}</strong><small>{object.kind}</small></span>
                 </button>
-                <button aria-label={object.visible ? "Hide layer" : "Show layer"} onClick={() => toggleVisibility(object.id)}>{object.visible ? <Eye size={14} /> : <EyeOff size={14} />}</button>
-                <button aria-label={object.locked ? "Unlock layer" : "Lock layer"} onClick={() => toggleLock(object.id)}>{object.locked ? <Lock size={14} /> : <Unlock size={14} />}</button>
-                <button aria-label="Move layer forward" onClick={() => reorder(object.id, "up")}><ChevronUp size={14} /></button>
-                <button aria-label="Move layer backward" onClick={() => reorder(object.id, "down")}><ChevronDown size={14} /></button>
+                <button className="layer-icon-button" title={object.locked ? "Unlock layer" : "Lock layer"} aria-label={object.locked ? "Unlock layer" : "Lock layer"} onClick={() => toggleLock(object.id)}>{object.locked ? <Lock size={14} /> : <Unlock size={14} />}</button>
               </div>
             ))}
           </div>
           {!project.objects.length && <p className="empty-note">This artboard is empty. Add text, a shape, or an image to begin.</p>}
-        </>
+          <div className="layer-toolbar" aria-label="Layer actions">
+            <button title="Add text layer" aria-label="Add text layer" onClick={() => void addText("body")}><Plus size={16} /></button>
+            <button title="Duplicate selected layer" aria-label="Duplicate selected layer" disabled={!selectedObject} onClick={duplicateSelected}><Copy size={15} /></button>
+            <button title="Raise selected layer" aria-label="Raise selected layer" disabled={!selectedObject} onClick={() => selectedObject && reorder(selectedObject.id, "up")}><ChevronUp size={16} /></button>
+            <button title="Lower selected layer" aria-label="Lower selected layer" disabled={!selectedObject} onClick={() => selectedObject && reorder(selectedObject.id, "down")}><ChevronDown size={16} /></button>
+            <span />
+            <button className="danger" title="Delete selected layer" aria-label="Delete selected layer" disabled={!selectedObject} onClick={deleteSelected}><Trash2 size={16} /></button>
+          </div>
+        </div>
       );
     }
     if (activeTool === "Files") {
@@ -902,7 +1117,7 @@ function Editor({
             <button className="text-preset subheading" onClick={() => void addText("subheading")}><Plus size={17} /><span><strong>Add a subheading</strong><small>Supporting emphasis</small></span></button>
             <button className="text-preset body" onClick={() => void addText("body")}><Plus size={17} /><span><strong>Add body text</strong><small>Readable paragraphs and captions</small></span></button>
           </div>
-          <div className="panel-section hint-card"><strong>Edit text on the right</strong><p>Select a text layer to change its words, typeface, size, alignment, color, and spacing.</p></div>
+          <div className="panel-section hint-card"><strong>Edit where you work</strong><p>Double-click text on the canvas to type in place, or use the Inspector for precise typography.</p></div>
         </>
       );
     }
@@ -933,7 +1148,7 @@ function Editor({
             ))}
           </div>
         </div>
-        <div className="panel-section"><ColorPicker label="Artboard color" value={project.canvas.background} onChange={setBackground} /></div>
+        <div className="panel-section"><ColorPicker label="Artboard color" value={project.canvas.background} onPreview={previewBackground} onCommit={setBackground} /></div>
         <div className="panel-section hint-card"><strong>Keyboard friendly</strong><p>Paste images, nudge with arrow keys, duplicate with ⌘/Ctrl+D, and undo with ⌘/Ctrl+Z.</p></div>
       </>
     );
@@ -966,14 +1181,17 @@ function Editor({
         <Tool icon={<Layers3 />} label="Layers" active={activeTool === "Layers"} onClick={() => setActiveTool("Layers")} />
         <Tool icon={<FolderOpen />} label="Files" active={activeTool === "Files"} onClick={() => setActiveTool("Files")} />
         <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(event) => handleUpload(event.target.files?.[0])} />
+        <input ref={fontInput} type="file" accept=".woff,.woff2,.ttf,.otf,font/woff,font/woff2,font/ttf,font/otf" hidden onChange={(event) => void uploadFont(event.target.files?.[0])} />
         <input ref={projectInput} type="file" accept=".json,.imagestitch.json,application/json" hidden onChange={(event) => void importProjectFile(event.target.files?.[0])} />
       </aside>
 
       <section className="sidepanel">{renderSidePanel()}</section>
 
       <section
+        ref={canvasViewport}
         className={`canvas-stage ${isDraggingFile ? "drop-active" : ""}`}
         aria-label="Design canvas"
+        title="Scroll over the canvas to zoom in or out"
         onDragEnter={(event) => { event.preventDefault(); setIsDraggingFile(true); }}
         onDragOver={(event) => event.preventDefault()}
         onDragLeave={(event) => { if (event.currentTarget === event.target) setIsDraggingFile(false); }}
@@ -987,9 +1205,9 @@ function Editor({
         <div className="stage-meta" style={{ width: stageWidth }}>
           <span>ARTBOARD 01</span>
           <div className="zoom-controls">
-            <button aria-label="Zoom out" onClick={() => changeZoom(-0.25)} disabled={zoom <= 0.5}><ZoomOut size={13} /></button>
-            <button onClick={() => changeZoom("fit")} title="Fit artboard">{Math.round(viewScale * 100)}%</button>
-            <button aria-label="Zoom in" onClick={() => changeZoom(0.25)} disabled={zoom >= 1.75}><ZoomIn size={13} /></button>
+            <button aria-label="Zoom out" title="Zoom out" onClick={() => void changeZoom(-0.25)} disabled={zoom <= 0.5}><ZoomOut size={13} /></button>
+            <button aria-label="Fit artboard" onClick={() => void changeZoom("fit")} title="Fit artboard">{Math.round(viewScale * 100)}%</button>
+            <button aria-label="Zoom in" title="Zoom in" onClick={() => void changeZoom(0.25)} disabled={zoom >= 3}><ZoomIn size={13} /></button>
           </div>
         </div>
         <div className="paper-wrap"><div ref={canvasElement} className="design-canvas" /></div>
@@ -1007,21 +1225,24 @@ function Editor({
             <label className="inspector-field"><span>Layer name</span><input key={`${selectedObject.id}-name`} defaultValue={selectedObject.name} onBlur={(event) => updateSelectedName(event.target.value)} /></label>
             {selectedObject.kind === "text" && (
               <>
-                <label className="inspector-field"><span>Text</span><textarea key={`${selectedObject.id}-text`} defaultValue={selectedObject.text} rows={4} onBlur={(event) => updateSelectedText(event.target.value)} /></label>
+                <label className="inspector-field"><span>Text <small>Double-click on canvas to edit in place</small></span><textarea key={`${selectedObject.id}-text-${selectedObject.text}`} defaultValue={selectedObject.text} rows={4} onBlur={(event) => updateSelectedText(event.target.value)} /></label>
                 <div className="typography-controls">
-                  <label className="inspector-field"><span>Typeface</span><select value={selectedObject.fontFamily} onChange={(event) => updateTextProperty({ fontFamily: event.target.value }, "Typeface changed")}>{FONT_FAMILIES.map((font) => <option key={font}>{font}</option>)}</select></label>
+                  <FontPicker value={selectedObject.fontFamily} assets={fontAssets} loading={fontLoading} onChoose={chooseFont} onUpload={() => fontInput.current?.click()} />
                   <label className="control-slider"><span>Size <small>{Math.round(selectedObject.fontSize)} px</small></span><input key={`${selectedObject.id}-font-size`} type="range" min="12" max="220" defaultValue={selectedObject.fontSize} onChange={(event) => updateTextProperty({ fontSize: Number(event.target.value) }, "Text size changed", false)} onPointerUp={() => commitCanvas("Text size changed")} onKeyUp={() => commitCanvas("Text size changed")} /></label>
                   <div className="text-button-row" aria-label="Text style and alignment">
-                    <button aria-label="Bold" className={selectedObject.fontStyle.includes("bold") ? "active" : ""} onClick={() => toggleTextStyle("bold")}><Bold size={15} /></button>
-                    <button aria-label="Italic" className={selectedObject.fontStyle.includes("italic") ? "active" : ""} onClick={() => toggleTextStyle("italic")}><Italic size={15} /></button>
-                    {(["left", "center", "right"] as const).map((align) => <button aria-label={`Align ${align}`} className={selectedObject.align === align ? "active" : ""} key={align} onClick={() => updateTextProperty({ align }, "Text aligned")}>{align.slice(0, 1).toUpperCase()}</button>)}
+                    <button title="Bold" aria-label="Bold" className={selectedObject.fontStyle.includes("bold") ? "active" : ""} onClick={() => toggleTextStyle("bold")}><Bold size={15} /></button>
+                    <button title="Italic" aria-label="Italic" className={selectedObject.fontStyle.includes("italic") ? "active" : ""} onClick={() => toggleTextStyle("italic")}><Italic size={15} /></button>
+                    {(["left", "center", "right"] as const).map((align) => {
+                      const Icon = align === "left" ? AlignLeft : align === "center" ? AlignCenter : AlignRight;
+                      return <button title={`Align ${align}`} aria-label={`Align ${align}`} className={selectedObject.align === align ? "active" : ""} key={align} onClick={() => updateTextProperty({ align }, "Text aligned")}><Icon size={16} /></button>;
+                    })}
                   </div>
                   <label className="control-slider"><span>Line height <small>{selectedObject.lineHeight.toFixed(2)}</small></span><input key={`${selectedObject.id}-line-height`} type="range" min="0.7" max="2" step="0.05" defaultValue={selectedObject.lineHeight} onChange={(event) => updateTextProperty({ lineHeight: Number(event.target.value) }, "Line height changed", false)} onPointerUp={() => commitCanvas("Line height changed")} onKeyUp={() => commitCanvas("Line height changed")} /></label>
                 </div>
               </>
             )}
             {selectedObject.kind !== "image" && (
-              <ColorPicker label="Fill" value={selectedObject.fill} onChange={setFill} compact />
+              <ColorPicker label="Fill" value={selectedObject.fill} onPreview={previewFill} onCommit={setFill} compact />
             )}
             {selectedObject.kind === "shape" && (
               <label className="inspector-field shape-select"><span>Shape</span><select value={selectedObject.shape} onChange={(event) => changeShapeType(event.target.value as ShapeKind)}>{SHAPE_OPTIONS.map((option) => <option key={option.kind} value={option.kind}>{option.label}</option>)}</select></label>
@@ -1067,7 +1288,90 @@ function Editor({
 }
 
 function Tool({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
-  return <button className={active ? "active" : ""} onClick={onClick}>{icon}<span>{label}</span></button>;
+  return <button className={active ? "active" : ""} title={label} aria-label={label} onClick={onClick}>{icon}<span>{label}</span></button>;
+}
+
+function FontPicker({
+  value,
+  assets,
+  loading,
+  onChoose,
+  onUpload,
+}: {
+  value: string;
+  assets: StoredFontAsset[];
+  loading: string | null;
+  onChoose: (family: string) => Promise<void>;
+  onUpload: () => void;
+}) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const matches = (family: string) => !normalizedQuery || family.toLowerCase().includes(normalizedQuery);
+  const installedFamilies = new Set(assets.map((asset) => asset.family));
+  const installed = assets.filter((asset) => matches(asset.family));
+  const system = SYSTEM_FONTS.filter(matches);
+  const google = GOOGLE_FONT_CHOICES.filter((font) => matches(font.family));
+
+  function choose(family: string) {
+    if (detailsRef.current) detailsRef.current.open = false;
+    setQuery("");
+    void onChoose(family);
+  }
+
+  return (
+    <div className="inspector-field font-field">
+      <span>Typeface</span>
+      <details className="font-picker" ref={detailsRef}>
+        <summary aria-label="Typeface" title="Choose or install a typeface">
+          <span style={{ fontFamily: value }}>{value}</span>
+          {loading ? <LoaderCircle className="spin" size={14} /> : <ChevronDown size={14} />}
+        </summary>
+        <div className="font-picker-menu">
+          <label className="font-search">
+            <Search size={14} aria-hidden="true" />
+            <input aria-label="Search typefaces" autoComplete="off" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search fonts" />
+          </label>
+          <button className="font-upload-button" title="Upload WOFF, WOFF2, TTF, or OTF" onClick={() => { if (detailsRef.current) detailsRef.current.open = false; onUpload(); }}>
+            <Upload size={14} /> Upload a font file
+          </button>
+          {installed.length > 0 && (
+            <div className="font-group">
+              <span>Installed locally</span>
+              {installed.map((font) => (
+                <button className={font.family === value ? "active font-option" : "font-option"} key={font.id} title={`Use ${font.family}`} onClick={() => choose(font.family)}>
+                  <strong style={{ fontFamily: font.family }}>{font.family}</strong><small>{font.source === "google" ? "Google Fonts" : "Uploaded"}</small>
+                </button>
+              ))}
+            </div>
+          )}
+          {system.length > 0 && (
+            <div className="font-group">
+              <span>System fonts</span>
+              {system.map((family) => (
+                <button className={family === value ? "active font-option" : "font-option"} key={family} title={`Use ${family}`} onClick={() => choose(family)}>
+                  <strong style={{ fontFamily: family }}>{family}</strong><small>Built in</small>
+                </button>
+              ))}
+            </div>
+          )}
+          {google.length > 0 && (
+            <div className="font-group">
+              <span>Free Google Fonts</span>
+              {google.map((font) => (
+                <button className={font.family === value ? "active font-option" : "font-option"} key={font.family} title={`${installedFamilies.has(font.family) ? "Use" : "Download and use"} ${font.family}`} disabled={Boolean(loading)} onClick={() => choose(font.family)}>
+                  <strong style={installedFamilies.has(font.family) ? { fontFamily: font.family } : undefined}>{font.family}</strong>
+                  <small>{loading === font.family ? "Downloading…" : installedFamilies.has(font.family) ? "Installed" : font.category}</small>
+                </button>
+              ))}
+            </div>
+          )}
+          {!installed.length && !system.length && !google.length && <p className="font-empty">No fonts match “{query}.”</p>}
+          <p className="font-license-note">Google Fonts are open source. Uploaded fonts stay on this device; check their license before sharing.</p>
+        </div>
+      </details>
+    </div>
+  );
 }
 
 function normalizeHexColor(value: string): string | null {
@@ -1080,29 +1384,52 @@ function normalizeHexColor(value: string): string | null {
 function ColorPicker({
   label,
   value,
-  onChange,
+  onPreview,
+  onCommit,
   compact = false,
 }: {
   label: string;
   value: string;
-  onChange: (color: string) => void;
+  onPreview: (color: string) => void;
+  onCommit: (color: string) => void;
   compact?: boolean;
 }) {
+  const colorInput = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
+  const [preview, setPreview] = useState(value);
+  useEffect(() => {
+    setDraft(value);
+    setPreview(value);
+  }, [value]);
+  useEffect(() => {
+    const input = colorInput.current;
+    if (!input) return;
+    const commitNativeColor = () => onCommit(input.value);
+    input.addEventListener("change", commitNativeColor);
+    return () => input.removeEventListener("change", commitNativeColor);
+  }, [onCommit]);
 
   function commitDraft() {
     const color = normalizeHexColor(draft);
-    if (color) onChange(color);
+    if (color) {
+      setPreview(color);
+      onCommit(color);
+    }
     else setDraft(value);
+  }
+
+  function previewNativeColor(color: string) {
+    setPreview(color);
+    setDraft(color);
+    onPreview(color);
   }
 
   return (
     <div className={`color-picker ${compact ? "compact" : ""}`}>
-      <div className="color-picker-heading"><span>{label}</span><code>{value.toUpperCase()}</code></div>
+      <div className="color-picker-heading"><span>{label}</span><code>{preview.toUpperCase()}</code></div>
       <div className="color-picker-controls">
         <div className="color-wheel-control" title={`Choose any ${label.toLowerCase()}`}>
-          <input aria-label={`${label} color wheel`} type="color" value={value} onChange={(event) => onChange(event.target.value)} />
+          <input ref={colorInput} aria-label={`${label} color wheel`} type="color" value={preview} onInput={(event) => previewNativeColor(event.currentTarget.value)} onChange={(event) => previewNativeColor(event.currentTarget.value)} onBlur={(event) => onCommit(event.currentTarget.value)} />
           <Palette size={17} aria-hidden="true" />
         </div>
         <input
@@ -1124,7 +1451,7 @@ function ColorPicker({
       </div>
       {!compact && (
         <div className="swatches" aria-label={`${label} presets`}>
-          {COLOR_SWATCHES.map((color) => <button className={value.toLowerCase() === color ? "active" : ""} key={color} aria-label={`Use ${color} for ${label.toLowerCase()}`} style={{ background: color }} onClick={() => onChange(color)} />)}
+          {COLOR_SWATCHES.map((color) => <button className={preview.toLowerCase() === color ? "active" : ""} title={`Use ${color}`} key={color} aria-label={`Use ${color} for ${label.toLowerCase()}`} style={{ background: color }} onClick={() => { setPreview(color); setDraft(color); onCommit(color); }} />)}
         </div>
       )}
     </div>

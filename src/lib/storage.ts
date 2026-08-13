@@ -1,9 +1,10 @@
 import { createProject, normalizeProject, type ImageStitchProject } from "./model";
 
 const DATABASE_NAME = "imagestitch";
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 const PROJECT_STORE = "projects";
 const ASSET_STORE = "assets";
+const FONT_STORE = "fonts";
 const SETTING_STORE = "settings";
 const ACTIVE_PROJECT_KEY = "activeProjectId";
 const LEGACY_PROJECT_KEY = "imagestitch.project.v1";
@@ -30,6 +31,26 @@ export interface StoredAsset {
   createdAt: string;
   source?: AssetSource;
   blob: Blob;
+}
+
+export interface StoredFontFace {
+  mimeType: string;
+  size: number;
+  style: string;
+  weight: string;
+  unicodeRange?: string;
+  blob: Blob;
+}
+
+export interface StoredFontAsset {
+  id: string;
+  family: string;
+  name: string;
+  source: "upload" | "google";
+  sourceUrl?: string;
+  license: string;
+  createdAt: string;
+  faces: StoredFontFace[];
 }
 
 interface StoredSetting {
@@ -66,6 +87,9 @@ function openDatabase(): Promise<IDBDatabase> {
       if (!database.objectStoreNames.contains(ASSET_STORE)) {
         const assets = database.createObjectStore(ASSET_STORE, { keyPath: "id" });
         assets.createIndex("projectId", "projectId", { unique: false });
+      }
+      if (!database.objectStoreNames.contains(FONT_STORE)) {
+        database.createObjectStore(FONT_STORE, { keyPath: "id" });
       }
       if (!database.objectStoreNames.contains(SETTING_STORE)) {
         database.createObjectStore(SETTING_STORE, { keyPath: "key" });
@@ -175,6 +199,20 @@ export async function listAssets(projectId: string): Promise<StoredAsset[]> {
   const transaction = database.transaction(ASSET_STORE, "readonly");
   const assets = await requestResult(transaction.objectStore(ASSET_STORE).index("projectId").getAll(projectId));
   return assets as StoredAsset[];
+}
+
+export async function saveFontAsset(font: StoredFontAsset): Promise<void> {
+  const database = await openDatabase();
+  const transaction = database.transaction(FONT_STORE, "readwrite");
+  transaction.objectStore(FONT_STORE).put(font);
+  await transactionComplete(transaction);
+}
+
+export async function listFontAssets(): Promise<StoredFontAsset[]> {
+  const database = await openDatabase();
+  const transaction = database.transaction(FONT_STORE, "readonly");
+  const fonts = await requestResult(transaction.objectStore(FONT_STORE).getAll());
+  return (fonts as StoredFontAsset[]).sort((a, b) => a.family.localeCompare(b.family));
 }
 
 export async function createStoredAsset(

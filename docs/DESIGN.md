@@ -12,6 +12,10 @@ Figma, and Linear, but uses its own layout, identity, copy, and local-first AI
 review model. Color belongs primarily to the work being created, not the app
 chrome competing with it.
 
+The one deliberate exception is the ImageStitch mark: a flat, black-framed
+stained-glass pane assembled from crisp rainbow facets. It gives the product a
+recognizable creative signal while the surrounding workstation stays neutral.
+
 ## Audience and tone
 
 Primary users create often but may not identify as designers. The interface is
@@ -51,6 +55,12 @@ states are intentionally excluded from application chrome.
 
 - Core actions work with mouse, keyboard, and touch-sized targets.
 - Drag interactions always have an inspector or keyboard alternative.
+- Double-clicking text opens an in-place editor; the Inspector remains the
+  precise alternative for copy and typography.
+- Scrolling over the stage zooms around the pointer. Dedicated zoom and Fit
+  controls remain available and every icon-only action carries a tooltip.
+- Continuous controls may preview live, but one completed gesture creates one
+  undo revision.
 - Escape exits the current mode; Delete removes selected objects after undo is
   available; arrow keys nudge; Shift modifies constraints consistently.
 - Auto-save reports a receipt. It never merely flashes an ambiguous spinner.

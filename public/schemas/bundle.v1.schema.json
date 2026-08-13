@@ -41,6 +41,40 @@
           "dataUrl": { "type": "string", "pattern": "^data:image/(png|jpeg|webp|gif);base64," }
         }
       }
+    },
+    "fonts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "family", "name", "source", "license", "createdAt", "faces"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 240 },
+          "family": { "type": "string", "minLength": 1, "maxLength": 240 },
+          "name": { "type": "string", "minLength": 1, "maxLength": 240 },
+          "source": { "enum": ["upload", "google"] },
+          "sourceUrl": { "type": "string", "format": "uri" },
+          "license": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "faces": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mimeType", "size", "style", "weight", "dataUrl"],
+              "properties": {
+                "mimeType": { "type": "string", "minLength": 1, "maxLength": 120 },
+                "size": { "type": "integer", "minimum": 1 },
+                "style": { "type": "string", "minLength": 1, "maxLength": 80 },
+                "weight": { "type": "string", "minLength": 1, "maxLength": 80 },
+                "unicodeRange": { "type": "string", "minLength": 1, "maxLength": 2000 },
+                "dataUrl": { "type": "string", "pattern": "^data:" }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

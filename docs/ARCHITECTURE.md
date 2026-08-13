@@ -21,6 +21,8 @@ flowchart LR
   Extension --> Editor[Shared ImageStitch editor]
   Editor --> ProjectStore[(IndexedDB projects)]
   Editor --> AssetStore[(IndexedDB image blobs)]
+  Editor --> FontStore[(IndexedDB font files)]
+  GoogleFonts[Google Fonts CSS API] -->|optional open-source font download| FontStore
   Editor --> Exporter[Browser export pipeline]
   Editor -. optional sign-in .-> Identity[Account service]
   ChatGPT[ChatGPT or Codex] -->|MCP tool calls| MCP[Public MCP adapter]
@@ -71,7 +73,8 @@ and every plan binds to an immutable base revision.
 
 - `imagestitch.project.v1`: engine-independent project state, objects, and
   bounded revision snapshots.
-- `imagestitch.bundle.v1`: portable project plus base64-encoded local assets.
+- `imagestitch.bundle.v1`: portable project plus base64-encoded local image and
+  used font assets.
 - `imagestitch.edit-plan.v1`: rationale-bearing proposed object operations.
 - `imagestitch.export-receipt.v1`: source revision, dimensions, MIME type,
   byte size, hash, warnings, and approval time.
@@ -170,6 +173,23 @@ and every plan binds to an immutable base revision.
 - **Alternatives:** Arbitrary search-engine scraping was rejected because it
   lacks a dependable reuse-rights contract. Commercial stock APIs were deferred
   because they add credentials, provider terms, and account coupling.
+
+### ADR-008: Local font catalog with optional Google Fonts download
+
+- **Status:** Accepted.
+- **Context:** Text needs a useful free catalog and user font uploads without
+  making editing, reload recovery, or project sharing depend on a remote font
+  stylesheet.
+- **Decision:** Present a curated catalog of open-source Google Fonts and fetch
+  a selected family through the public CSS API, then store the returned font
+  bytes in IndexedDB and register them through `FontFace`. WOFF, WOFF2, TTF, and
+  OTF uploads use the same store. Portable bundles embed only font families used
+  by that project. Google catalog metadata is curated in source so ImageStitch
+  does not require a Google Fonts Developer API key.
+- **Consequences:** Installed fonts work offline after first download and travel
+  with portable projects. Google download requires narrowly scoped extension
+  host access to `fonts.googleapis.com` and `fonts.gstatic.com`. User-supplied
+  font licenses cannot be inferred, so the interface preserves that warning.
 
 ## Risks and mitigations
 

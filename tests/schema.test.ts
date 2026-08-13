@@ -70,4 +70,21 @@ describe("public JSON schemas", () => {
       }],
     }), JSON.stringify(validate.errors)).toBe(true);
   });
+
+  it("accepts locally embedded font faces in portable bundles", () => {
+    const project = createProject("Font bundle", false);
+    const validate = validator().compile(bundleSchema);
+    expect(validate({
+      schemaVersion: "imagestitch.bundle.v1",
+      exportedAt: new Date().toISOString(),
+      project,
+      assets: [],
+      fonts: [{
+        id: "google:dm-sans", family: "DM Sans", name: "DM Sans", source: "google",
+        sourceUrl: "https://fonts.google.com/specimen/DM+Sans", license: "Open source via Google Fonts",
+        createdAt: new Date().toISOString(),
+        faces: [{ mimeType: "font/woff2", size: 1, style: "normal", weight: "400", dataUrl: "data:font/woff2;base64,AA==" }],
+      }],
+    }), JSON.stringify(validate.errors)).toBe(true);
+  });
 });
