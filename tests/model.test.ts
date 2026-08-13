@@ -8,12 +8,13 @@ import {
   redoProject,
   setCanvasPreset,
   undoProject,
+  SHAPE_KINDS,
 } from "../src/lib/model";
 
-describe("ImageStitch project model", () => {
+describe("GlassWare project model", () => {
   it("creates a local square project with serializable starter layers", () => {
     const project = createProject("Birthday card");
-    expect(project.schemaVersion).toBe("imagestitch.project.v1");
+    expect(project.schemaVersion).toBe("glassware.project.v1");
     expect(project.residency).toBe("local");
     expect(project.canvas).toMatchObject({ preset: "square", width: 1080, height: 1080 });
     expect(project.objects.map((object) => object.kind)).toEqual(["text", "shape", "text"]);
@@ -54,7 +55,7 @@ describe("ImageStitch project model", () => {
 
   it("recovers the original localStorage-era project shape", () => {
     const recovered = normalizeProject({
-      schemaVersion: "imagestitch.project.v1",
+      schemaVersion: "glassware.project.v1",
       id: "legacy-project",
       name: "Legacy",
       residency: "local",
@@ -65,8 +66,15 @@ describe("ImageStitch project model", () => {
       revisions: [{ id: "legacy-revision", number: 1, createdAt: "2026-01-01T00:00:00.000Z", summary: "Created" }],
       currentRevisionId: "legacy-revision",
     });
-    expect(recovered?.canvas.background).toBe("#f8f0df");
+    expect(recovered?.canvas.background).toBe("#ffffff");
     expect(recovered?.revisions[0].snapshot.objects).toEqual([]);
+  });
+
+  it("migrates pre-rename project manifests to the GlassWare schema", () => {
+    const project = createProject("Brand migration");
+    const recovered = normalizeProject({ ...project, schemaVersion: "imagestitch.project.v1" });
+    expect(recovered?.schemaVersion).toBe("glassware.project.v1");
+    expect(recovered?.id).toBe(project.id);
   });
 
   it("adds non-destructive defaults when recovering a legacy image layer", () => {
@@ -86,5 +94,17 @@ describe("ImageStitch project model", () => {
       crop: { x: 0, y: 0, width: 1, height: 1 },
       adjustments: { brightness: 0, contrast: 0, saturation: 0, blur: 0, grayscale: false, sepia: false },
     });
+  });
+
+  it("normalizes every shape in the starter element library", () => {
+    for (const shape of SHAPE_KINDS) {
+      const project = createProject(`Shape ${shape}`);
+      const shapeNode = project.objects.find((object) => object.kind === "shape")!;
+      const candidate = {
+        ...project,
+        objects: project.objects.map((object) => object.id === shapeNode.id ? { ...object, shape } : object),
+      };
+      expect(normalizeProject(candidate)?.objects.find((object) => object.kind === "shape")).toMatchObject({ shape });
+    }
   });
 });

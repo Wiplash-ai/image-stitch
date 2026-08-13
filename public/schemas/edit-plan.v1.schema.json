@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://imagestitch.dev/schemas/edit-plan.v1.schema.json",
-  "title": "ImageStitch edit plan v1",
+  "$id": "https://labs.wiplash.ai/glassware/schemas/edit-plan.v1.schema.json",
+  "title": "GlassWare edit plan v1",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "id", "baseRevisionId", "createdAt", "provenance", "operations"],
   "properties": {
-    "schemaVersion": { "const": "imagestitch.edit-plan.v1" },
+    "schemaVersion": { "const": "glassware.edit-plan.v1" },
     "id": { "type": "string", "format": "uuid" },
     "baseRevisionId": { "type": "string", "format": "uuid" },
     "createdAt": { "type": "string", "format": "date-time" },

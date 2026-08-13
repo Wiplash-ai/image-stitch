@@ -1,7 +1,7 @@
-# ImageStitch implementation plan
+# GlassWare implementation plan
 
 **Status:** Accepted foundation
-**Version:** 0.2
+**Version:** 0.3
 **Updated:** 2026-08-13
 
 ## Product objective
@@ -28,32 +28,39 @@ undo, strong presets, and fast recovery over exposing graphics-engine jargon.
 Exit gate: a clean clone passes `npm run verify`, the unpacked extension opens,
 captures a visible tab, and loads that capture into its bundled editor.
 
-### Phase 1 — dependable everyday editor (in progress)
+### Phase 1 — dependable everyday editor (current milestone)
 
 - [x] IndexedDB project/asset stores and recent-project switching.
 - [x] Snapshot undo/redo history and autosave/recovery receipts.
-- [x] Layer panel: reorder, rename, duplicate, lock, and hide.
+- [x] Layer panel: full-card drag reorder, rename, duplicate, lock, and hide.
 - [ ] Grouping and multi-select.
 - [x] Core keyboard shortcuts, paste, and drop.
 - [x] Alignment guides, object/artboard snapping, and user-controlled zoom.
 - [ ] Rulers and configurable snapping.
 - [x] Typeface, size, weight, italic, alignment, line-height, rectangle, and
   ellipse controls.
-- [ ] Local font upload, lines, borders, and shadows.
+- [x] Inline canvas text editing, searchable Google Font catalog, and local
+  WOFF/WOFF2/TTF/OTF upload with portable font embedding.
+- [x] Twelve-shape starter library including polygons, callouts, lines, and arrows.
+- [ ] Borders and shadows.
 - [x] Non-destructive centered crop presets, opacity, brightness, contrast,
   saturation, blur, grayscale, sepia, and named photo looks.
 - [ ] Interactive crop handles, rotate/flip, blend modes, temperature, tint,
   sharpen, and vignette.
 - [x] PNG, JPEG, WebP, and portable project bundle export/import.
+- [x] Openverse image search with local import and durable attribution receipts.
 - [ ] SVG and print-ready PDF export.
 
 Exit gate: the design partner completes ten representative Canva/PicMonkey jobs
 without data loss or needing developer assistance.
 
+The scoped milestone, success measures, dependencies, and sequencing are in
+[`NEXT_MILESTONE.md`](./NEXT_MILESTONE.md).
+
 ### Phase 2 — templates and repeatability
 
 - Social, card, invitation, flyer, banner, label, and print presets.
-- Searchable templates with original, clearly licensed ImageStitch content.
+- Searchable templates with original, clearly licensed GlassWare content.
 - Brand kits for colors, fonts, logos, reusable components, and defaults.
 - Multi-page projects, page duplication, resize-with-layout adaptation.
 - Background removal adapter and local/manual fallback tools.
@@ -64,9 +71,10 @@ under five minutes.
 
 ### Phase 3 — reviewable AI
 
-- [x] Optional account shell and separate ChatGPT/Codex versus OpenAI API
-  connection states, backed by a public private-service client contract.
-- `imagestitch.edit-plan.v1` validator and selective plan review UI.
+- [x] Modal account entry, honest device-profile fallback, and separate
+  ChatGPT/Codex versus OpenAI API connection states backed by a public
+  private-service client contract.
+- `glassware.edit-plan.v1` validator and selective plan review UI.
 - MCP tools for inspecting projects, adding assets, proposing edits, applying
   approved operations, and exporting approved revisions.
 - ChatGPT/Codex plugin path using the user's existing authenticated client.

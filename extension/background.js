@@ -1,9 +1,9 @@
-const CAPTURE_KEY = "imagestitch.pendingCapture.v1";
+const CAPTURE_KEY = "glassware.pendingCapture.v1";
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
-    id: "imagestitch-capture-page",
-    title: "Capture page with ImageStitch",
+    id: "glassware-capture-page",
+    title: "Capture page with GlassWare",
     contexts: ["page"],
   });
 });
@@ -22,7 +22,7 @@ chrome.contextMenus.onClicked.addListener((_info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== "imagestitch.capture-visible") return false;
+  if (message?.type !== "glassware.capture-visible") return false;
   chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
     if (!tab) throw new Error("No active tab available");
     return captureAndOpen(tab);

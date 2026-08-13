@@ -1,7 +1,7 @@
-# ImageStitch agent guide
+# GlassWare agent guide
 
 - Preserve the local-first default. Do not upload project assets implicitly.
-- Keep Konva behind the canvas adapter; public schemas are ImageStitch's API.
+- Keep Konva behind the canvas adapter; public schemas are GlassWare's API.
 - Every durable mutation must become a reversible project command and revision.
 - AI operations bind to an exact base revision and fail closed when stale.
 - ChatGPT/Codex MCP use and OpenAI API-key use are separate product paths.

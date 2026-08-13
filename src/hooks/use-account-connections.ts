@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createAccountServiceClient,
-  createLocalPreviewAccountClient,
+  createDeviceAccountClient,
+  type MagicLinkReceipt,
   type AccountSnapshot,
   type AiConnectionKind,
+  type SignInProvider,
 } from "../lib/account-connections";
 
 const EMPTY_SNAPSHOT: AccountSnapshot = { account: null, connections: [], syncEnabled: false };
@@ -16,13 +18,14 @@ function currentReturnUrl(): string {
 }
 
 export interface AccountConnectionsModel {
-  mode: "service" | "local-preview";
+  mode: "service" | "device";
   snapshot: AccountSnapshot;
   loading: boolean;
   busy: string | null;
   notice: string;
   error: string;
-  signIn(email: string): Promise<void>;
+  signIn(email: string): Promise<MagicLinkReceipt["status"] | null>;
+  signInWith(provider: SignInProvider): Promise<void>;
   signOut(): Promise<void>;
   connect(kind: AiConnectionKind, projectId: string): Promise<void>;
   disconnect(connectionId: string): Promise<void>;
@@ -31,18 +34,20 @@ export interface AccountConnectionsModel {
 }
 
 export function useAccountConnections(): AccountConnectionsModel {
-  const configuredBaseUrl = import.meta.env.VITE_IMAGESTITCH_ACCOUNT_API_URL?.trim() ?? "";
+  const configuredBaseUrl = import.meta.env.VITE_GLASSWARE_ACCOUNT_API_URL?.trim()
+    ?? import.meta.env.VITE_IMAGESTITCH_ACCOUNT_API_URL?.trim()
+    ?? "";
   const clientSetup = useMemo(() => {
     try {
       return {
         client: configuredBaseUrl
           ? createAccountServiceClient({ baseUrl: configuredBaseUrl })
-          : createLocalPreviewAccountClient(),
+          : createDeviceAccountClient(),
         configurationError: "",
       };
     } catch (cause) {
       return {
-        client: createLocalPreviewAccountClient(),
+        client: createDeviceAccountClient(),
         configurationError: cause instanceof Error ? cause.message : "The account service configuration is invalid.",
       };
     }
@@ -91,17 +96,23 @@ export function useAccountConnections(): AccountConnectionsModel {
 
   const signIn = useCallback(async (email: string) => {
     const receipt = await run("sign-in", () => client.requestMagicLink(email, currentReturnUrl()));
-    if (!receipt) return;
+    if (!receipt) return null;
     if (receipt.snapshot) setSnapshot(receipt.snapshot);
     setNotice(receipt.status === "email-sent"
       ? `Sign-in link sent to ${receipt.email}.`
-      : `Preview account ready for ${receipt.email}. No email or remote account was created.`);
+      : `GlassWare is ready for ${receipt.email} on this device.`);
+    return receipt.status;
   }, [client, run]);
 
   const signOut = useCallback(async () => {
     const next = await run("sign-out", () => client.signOut(), setSnapshot);
     if (!next) return;
     setNotice("Signed out. Your local projects are still on this device.");
+  }, [client, run]);
+
+  const signInWith = useCallback(async (provider: SignInProvider) => {
+    const authorization = await run(`sign-in-${provider}`, () => client.startSignIn(provider, currentReturnUrl()));
+    if (authorization) window.location.assign(authorization.authorizationUrl);
   }, [client, run]);
 
   const connect = useCallback(async (kind: AiConnectionKind, projectId: string) => {
@@ -112,9 +123,7 @@ export function useAccountConnections(): AccountConnectionsModel {
       return;
     }
     if (authorization.snapshot) setSnapshot(authorization.snapshot);
-    setNotice(client.mode === "local-preview"
-      ? "Preview connection added. No OpenAI account, subscription, or API key was contacted."
-      : "AI connection established.");
+    setNotice("AI connection established.");
   }, [client, run]);
 
   const disconnect = useCallback(async (connectionId: string) => {
@@ -137,6 +146,7 @@ export function useAccountConnections(): AccountConnectionsModel {
     notice,
     error,
     signIn,
+    signInWith,
     signOut,
     connect,
     disconnect,

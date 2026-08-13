@@ -32,7 +32,7 @@ describe("portable project bundles", () => {
     });
     source.revisions[0].snapshot.objects = source.objects.map((object) => ({ ...object }));
     const imported = await readProjectBundle(JSON.stringify({
-      schemaVersion: "imagestitch.bundle.v1",
+      schemaVersion: "glassware.bundle.v1",
       exportedAt: "2026-01-01T00:00:00.000Z",
       project: source,
       assets: [{
@@ -54,6 +54,39 @@ describe("portable project bundles", () => {
   });
 
   it("rejects unrelated JSON", async () => {
-    await expect(readProjectBundle('{"hello":"world"}')).rejects.toThrow("valid ImageStitch");
+    await expect(readProjectBundle('{"hello":"world"}')).rejects.toThrow("valid GlassWare");
+  });
+
+  it("imports pre-rename bundles without carrying the old schema forward", async () => {
+    const source = createProject("Old brand", false);
+    const imported = await readProjectBundle(JSON.stringify({
+      schemaVersion: "imagestitch.bundle.v1",
+      exportedAt: "2026-08-13T00:00:00.000Z",
+      project: { ...source, schemaVersion: "imagestitch.project.v1" },
+      assets: [],
+    }));
+    expect(imported.project.schemaVersion).toBe("glassware.project.v1");
+  });
+
+  it("restores embedded font files from a portable project", async () => {
+    const source = createProject("Font card", false);
+    const imported = await readProjectBundle(JSON.stringify({
+      schemaVersion: "glassware.bundle.v1",
+      exportedAt: "2026-08-13T00:00:00.000Z",
+      project: source,
+      assets: [],
+      fonts: [{
+        id: "google:dm-sans",
+        family: "DM Sans",
+        name: "DM Sans",
+        source: "google",
+        sourceUrl: "https://fonts.google.com/specimen/DM+Sans",
+        license: "Open source via Google Fonts",
+        createdAt: "2026-08-13T00:00:00.000Z",
+        faces: [{ mimeType: "font/woff2", size: 1, style: "normal", weight: "400", dataUrl: "data:font/woff2;base64,AA==" }],
+      }],
+    }));
+    expect(imported.fonts[0]).toMatchObject({ family: "DM Sans", source: "google" });
+    expect(imported.fonts[0].faces[0].blob).toBeInstanceOf(Blob);
   });
 });

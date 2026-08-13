@@ -1,50 +1,74 @@
-# ImageStitch product and interaction design
+# GlassWare product and interaction design
 
 ## Design premise
 
-ImageStitch should feel like a well-used creative table: warm paper, dark tools,
-bold marks, visible seams, and enough precision to trust the output. The visual
-idea is **the stitched workbench**—artboards look like paper being assembled,
-while controls feel like compact instruments around it.
+GlassWare is a focused creative workstation: white panels, black tools, and a
+neutral-gray stage around the user's artwork. The structure borrows the
+confidence and precision of professional image editors while keeping labels,
+targets, and presets approachable for frequent non-designers.
 
-This avoids both a generic enterprise dashboard and a direct visual imitation
-of Canva or PicMonkey.
+The product is inspired by interaction patterns common to Canva, Photoshop,
+Figma, and Linear, but uses its own layout, identity, copy, and local-first AI
+review model. Color belongs primarily to the work being created, not the app
+chrome competing with it.
+
+The one deliberate exception is the GlassWare mark: a flat, black-framed
+stained-glass pane assembled from crisp rainbow facets. It gives the product a
+recognizable creative signal while the surrounding workstation stays neutral.
 
 ## Audience and tone
 
 Primary users create often but may not identify as designers. The interface is
-confident, warm, plain-spoken, and forgiving. It should say “bring in an image”
-instead of “instantiate bitmap object,” and “quick colors” instead of “fill
-token palette.” Advanced capability appears progressively in the inspector.
+plain-spoken, calm, and forgiving. It says “bring in an image” instead of
+“instantiate bitmap object,” and “quick colors” instead of “fill token
+palette.” Advanced capability appears progressively in the inspector.
 
 ## Visual system
 
-- **Ink:** `#19352e` for structure, tools, and high-confidence actions.
-- **Paper:** `#f8f0df` for the workspace shell.
-- **Canvas:** `#fffdf8` or the project's chosen background.
-- **Coral thread:** `#db5d3f` for capture, AI proposals, and active tools.
-- **Gold pin:** `#e8af45` for highlights and template annotations.
-- **Sage:** `#5f826c` for saved, local, and safe states.
-- **Blue:** `#4f6da8` for links and informational states.
+- **Black:** `#111111` for the tool rail, primary actions, selection, and text.
+- **White:** `#ffffff` for the top bar, panels, controls, and default artboard.
+- **Soft surface:** `#f6f6f6` for cards, drop zones, and grouped controls.
+- **Workspace gray:** `#dedede` for the stage around the artboard.
+- **Border gray:** `#d1d1d1` for panel and control separation.
+- **Secondary text:** `#686868` for guidance and metadata.
+- **Semantic colors only:** green for success, amber for warnings, red for
+  errors and destructive actions.
 
-Display typography uses a characterful editorial serif. Controls use a compact
-humanist sans. Coordinates, dimensions, revisions, and provenance use mono.
-Production builds should self-host licensed font files rather than rely on a
-third-party font request.
+Interface typography uses a clean system sans. Coordinates, dimensions,
+revisions, and provenance use mono. User artwork may use any typeface or color;
+the interface does not force the monochrome shell onto exported designs.
+
+Controls use six-to-eight-pixel radii, one-pixel borders, and restrained soft
+elevation. Hard offset shadows, decorative paper tones, and chromatic active
+states are intentionally excluded from application chrome.
 
 ## Editor anatomy
 
-1. **Top bar:** identity, project name, undo/redo, AI proposal entry, export.
-2. **Tool rail:** one-click modes with large icon and text targets.
-3. **Asset panel:** content and presets for the active tool.
-4. **Stage:** scrollable neutral cutting mat and the current paper artboard.
-5. **Inspector:** properties only for the current selection.
+1. **Top bar:** identity, project name, undo/redo, AI entry, and export.
+2. **Black tool rail:** large icon-and-label targets for editor modes.
+3. **White asset panel:** content, presets, and friendly task entry.
+4. **Gray stage:** scrollable work area with a high-contrast white artboard.
+5. **White inspector:** properties for the current selection only.
 6. **Status receipt:** local-save state, revision, export warnings, and AI scope.
+
+The Layers panel uses a compact Photoshop/GIMP-inspired stack. Dragging any
+layer row lifts a preview of the full card, and insertion rules show exactly
+where it will land. Visibility, lock, duplicate, raise, and lower controls stay
+available without changing modes.
 
 ## Interaction rules
 
-- Core actions must work with mouse, keyboard, and touch-sized targets.
+- Core actions work with mouse, keyboard, and touch-sized targets.
 - Drag interactions always have an inspector or keyboard alternative.
+- Double-clicking text opens an in-place editor; the Inspector remains the
+  precise alternative for copy and typography.
+- Scrolling over the stage zooms around the pointer. Dedicated zoom and Fit
+  controls remain available and every icon-only action carries a tooltip.
+- Continuous controls may preview live, but one completed gesture creates one
+  undo revision.
+- Sign-in appears as a focused modal rather than replacing a creative tool
+  panel. When the cloud account service is absent, GlassWare clearly offers a
+  browser-bound device profile and leaves cloud/provider actions unavailable.
 - Escape exits the current mode; Delete removes selected objects after undo is
   available; arrow keys nudge; Shift modifies constraints consistently.
 - Auto-save reports a receipt. It never merely flashes an ambiguous spinner.

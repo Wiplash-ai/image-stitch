@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">GlassWare</title>
+  <defs>
+    <clipPath id="glass"><rect x="23" y="23" width="82" height="82" rx="10"/></clipPath>
+  </defs>
+  <rect width="128" height="128" rx="26" fill="#111111"/>
+  <g clip-path="url(#glass)" stroke="#111111" stroke-width="5" stroke-linejoin="round">
+    <path d="M20 20h43L53 53 20 66z" fill="#ff4b4b"/>
+    <path d="M63 20h45v29L76 58 53 53z" fill="#ff9f1c"/>
+    <path d="M108 49v31L76 73V58z" fill="#ffe83b"/>
+    <path d="M20 66l33-13 23 20-14 34H20z" fill="#2fca75"/>
+    <path d="M76 73l32 7v27H62z" fill="#2ca8ff"/>
+    <path d="M20 107h42l-16 24H20z" fill="#7c5cff"/>
+    <path d="M62 107h46v24H46z" fill="#ef4fa6"/>
+  </g>
+  <rect x="23" y="23" width="82" height="82" rx="10" fill="none" stroke="#ffffff" stroke-width="4"/>
+</svg>

@@ -1,8 +1,8 @@
-# ImageStitch architecture
+# GlassWare architecture
 
 ## Requirements summary
 
-ImageStitch is a local-first browser application and MV3 extension for image
+GlassWare is a local-first browser application and MV3 extension for image
 composition and photo editing. It must remain useful offline, preserve source
 assets locally, support deterministic export, and accept constrained AI edit
 plans from several interchangeable providers.
@@ -17,9 +17,12 @@ for synchronization, model connections, or workloads browsers cannot perform.
 flowchart LR
   Browser[Browser page] -->|capture or image| Extension[MV3 extension]
   Upload[Local files and clipboard] --> Editor
-  Extension --> Editor[Shared ImageStitch editor]
+  Openverse[Openverse API] -->|search results and image bytes| Editor
+  Extension --> Editor[Shared GlassWare editor]
   Editor --> ProjectStore[(IndexedDB projects)]
   Editor --> AssetStore[(IndexedDB image blobs)]
+  Editor --> FontStore[(IndexedDB font files)]
+  GoogleFonts[Google Fonts CSS API] -->|optional open-source font download| FontStore
   Editor --> Exporter[Browser export pipeline]
   Editor -. optional sign-in .-> Identity[Account service]
   ChatGPT[ChatGPT or Codex] -->|MCP tool calls| MCP[Public MCP adapter]
@@ -35,7 +38,8 @@ flowchart LR
 | --- | --- | --- | --- |
 | Project core | Manifest, migrations, commands, revisions | Project records | Typed commands and schemas |
 | Canvas adapter | Konva node lifecycle and serialization | No durable data | Render and selection adapter |
-| Asset repository | Import, hashes, blobs, thumbnails, relinking | Local asset bytes | Asset references |
+| Asset repository | Import, blobs, source receipts, thumbnails, relinking | Local asset bytes and attribution | Asset references |
+| Image search adapter | Search and download reusable Openverse media | No durable data | Normalized image candidates |
 | Export pipeline | PNG/JPEG/WebP/SVG/PDF generation and QA | Export receipts | Export jobs |
 | Extension shell | Capture, page integration, clipboard handoff | Pending captures | Chrome messages |
 | AI plan review | Validation, diff, selective acceptance | Edit plans | Plan review commands |
@@ -67,11 +71,12 @@ and every plan binds to an immutable base revision.
 
 ## Public contracts
 
-- `imagestitch.project.v1`: engine-independent project state, objects, and
+- `glassware.project.v1`: engine-independent project state, objects, and
   bounded revision snapshots.
-- `imagestitch.bundle.v1`: portable project plus base64-encoded local assets.
-- `imagestitch.edit-plan.v1`: rationale-bearing proposed object operations.
-- `imagestitch.export-receipt.v1`: source revision, dimensions, MIME type,
+- `glassware.bundle.v1`: portable project plus base64-encoded local image and
+  used font assets.
+- `glassware.edit-plan.v1`: rationale-bearing proposed object operations.
+- `glassware.export-receipt.v1`: source revision, dimensions, MIME type,
   byte size, hash, warnings, and approval time.
 - MCP tools will wrap the same commands; they do not receive an unrestricted
   browser, filesystem, or canvas mutation primitive.
@@ -81,9 +86,9 @@ and every plan binds to an immutable base revision.
 ### ADR-001: Konva as the initial canvas engine
 
 - **Status:** Accepted.
-- **Context:** ImageStitch needs a typed, MIT object canvas with dependable
+- **Context:** GlassWare needs a typed, MIT object canvas with dependable
   transforms, layers, events, filters, and browser/Node rendering options.
-- **Decision:** Use Konva as an adapter behind an ImageStitch-owned document
+- **Decision:** Use Konva as an adapter behind a GlassWare-owned document
   model. Konva passed the initial Chrome visual alignment check and also powers
   the MIT Filerobot editor. It is not the public project contract.
 - **Consequences:** We own serialization, typography behavior, history, and
@@ -136,18 +141,56 @@ and every plan binds to an immutable base revision.
   source quality and editability. Persisting Konva filter JSON would couple the
   public contract to one rendering engine.
 
-### ADR-006: optional account client with explicit preview mode
+### ADR-006: optional account service with an honest device-profile fallback
 
 - **Status:** Accepted.
 - **Decision:** Keep normal editing accountless. The public client exposes one
-  account/connection interface with a visibly labeled local preview adapter and
-  an HTTPS private-service adapter. Production sessions use HTTP-only cookies,
-  mutating requests use CSRF receipts, and connection responses contain opaque
-  identifiers rather than provider credentials.
-- **Consequences:** Account and connection UX can be dogfooded before private
-  infrastructure exists. Preview state must never be described as real login,
-  sync remains off by default, and extension identity needs a future device-link
-  flow rather than broad host permissions.
+  account/connection interface with a browser-bound device-profile adapter and
+  an HTTPS private-service adapter. Sign-in entry lives in a modal. Production
+  sessions use HTTP-only cookies, mutating requests use CSRF receipts, and
+  connection responses contain opaque identifiers rather than provider
+  credentials.
+- **Consequences:** Personalization works before private infrastructure is
+  configured, but device mode does not claim cloud authentication and cannot
+  fake sync or provider authorization. Extension identity still needs a future
+  device-link flow rather than broad host permissions.
+
+### ADR-007: Openverse adapter for openly licensed image search
+
+- **Status:** Accepted.
+- **Context:** The Images tool needs useful web search without embedding a
+  commercial stock-provider key or pretending arbitrary web images are safe to
+  reuse.
+- **Decision:** Use the anonymous Openverse API through a typed client adapter.
+  Initial results are limited to PDM, CC0, and CC BY entries with mature results
+  disabled. Download through Openverse's CORS-enabled image endpoint, save the
+  resulting bytes locally, and persist provider, creator, source URL, license,
+  and attribution alongside the asset. The MV3 package requests access only to
+  `https://api.openverse.org/*`.
+- **Consequences:** Search remains optional and normal editing stays local.
+  Openverse rate limits and availability affect search, not saved projects.
+  Catalog license information can be inaccurate, so the interface preserves a
+  source link and asks users to verify the license before publishing.
+- **Alternatives:** Arbitrary search-engine scraping was rejected because it
+  lacks a dependable reuse-rights contract. Commercial stock APIs were deferred
+  because they add credentials, provider terms, and account coupling.
+
+### ADR-008: Local font catalog with optional Google Fonts download
+
+- **Status:** Accepted.
+- **Context:** Text needs a useful free catalog and user font uploads without
+  making editing, reload recovery, or project sharing depend on a remote font
+  stylesheet.
+- **Decision:** Present a curated catalog of open-source Google Fonts and fetch
+  a selected family through the public CSS API, then store the returned font
+  bytes in IndexedDB and register them through `FontFace`. WOFF, WOFF2, TTF, and
+  OTF uploads use the same store. Portable bundles embed only font families used
+  by that project. Google catalog metadata is curated in source so GlassWare
+  does not require a Google Fonts Developer API key.
+- **Consequences:** Installed fonts work offline after first download and travel
+  with portable projects. Google download requires narrowly scoped extension
+  host access to `fonts.googleapis.com` and `fonts.gstatic.com`. User-supplied
+  font licenses cannot be inferred, so the interface preserves that warning.
 
 ## Risks and mitigations
 
@@ -160,3 +203,4 @@ and every plan binds to an immutable base revision.
 | AI edits corrupt designs | High | Base-revision binding, schema validation, preview, selective apply, undo |
 | API key exposure | Critical | Never store in client code; encrypted vault, opaque IDs, revocation |
 | Template/font/asset licensing errors | High | Machine-readable attribution inventory and release audit |
+| Search catalog has stale or inaccurate license data | High | Restrictive default filters, durable source receipt, visible verification link |

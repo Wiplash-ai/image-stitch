@@ -3,7 +3,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import projectSchema from "../public/schemas/project.v1.schema.json";
 import bundleSchema from "../public/schemas/bundle.v1.schema.json";
-import { createProject } from "../src/lib/model";
+import { createProject, SHAPE_KINDS } from "../src/lib/model";
 
 function validator() {
   const ajv = new Ajv2020({ allErrors: true });
@@ -23,7 +23,7 @@ describe("public JSON schemas", () => {
     const project = createProject("Portable fixture", false);
     const validate = validator().compile(bundleSchema);
     expect(validate({
-      schemaVersion: "imagestitch.bundle.v1",
+      schemaVersion: "glassware.bundle.v1",
       exportedAt: new Date().toISOString(),
       project,
       assets: [],
@@ -41,5 +41,50 @@ describe("public JSON schemas", () => {
     });
     const validate = validator().getSchema(projectSchema.$id)!;
     expect(validate(project), JSON.stringify(validate.errors)).toBe(true);
+  });
+
+  it("accepts every shape in the public element library", () => {
+    const validate = validator().getSchema(projectSchema.$id)!;
+    for (const shape of SHAPE_KINDS) {
+      const project = createProject(`Schema ${shape}`);
+      const shapeNode = project.objects.find((object) => object.kind === "shape")!;
+      project.objects = project.objects.map((object) => object.id === shapeNode.id ? { ...object, shape } : object);
+      expect(validate(project), `${shape}: ${JSON.stringify(validate.errors)}`).toBe(true);
+    }
+  });
+
+  it("accepts searched-image attribution in portable bundles", () => {
+    const project = createProject("Attributed image", false);
+    const validate = validator().compile(bundleSchema);
+    expect(validate({
+      schemaVersion: "glassware.bundle.v1",
+      exportedAt: new Date().toISOString(),
+      project,
+      assets: [{
+        id: crypto.randomUUID(), projectId: project.id, name: "flower.png", mimeType: "image/png",
+        size: 1, width: 1, height: 1, createdAt: new Date().toISOString(), dataUrl: "data:image/png;base64,AA==",
+        source: {
+          provider: "openverse", sourceUrl: "https://example.com/flower", creator: "Creator",
+          license: "BY", licenseUrl: "https://creativecommons.org/licenses/by/4.0/", attribution: "Flower by Creator, CC BY 4.0.",
+        },
+      }],
+    }), JSON.stringify(validate.errors)).toBe(true);
+  });
+
+  it("accepts locally embedded font faces in portable bundles", () => {
+    const project = createProject("Font bundle", false);
+    const validate = validator().compile(bundleSchema);
+    expect(validate({
+      schemaVersion: "glassware.bundle.v1",
+      exportedAt: new Date().toISOString(),
+      project,
+      assets: [],
+      fonts: [{
+        id: "google:dm-sans", family: "DM Sans", name: "DM Sans", source: "google",
+        sourceUrl: "https://fonts.google.com/specimen/DM+Sans", license: "Open source via Google Fonts",
+        createdAt: new Date().toISOString(),
+        faces: [{ mimeType: "font/woff2", size: 1, style: "normal", weight: "400", dataUrl: "data:font/woff2;base64,AA==" }],
+      }],
+    }), JSON.stringify(validate.errors)).toBe(true);
   });
 });

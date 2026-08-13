@@ -33,9 +33,26 @@ export interface TextDesignNode extends BaseDesignNode {
   lineHeight: number;
 }
 
+export const SHAPE_KINDS = [
+  "rect",
+  "rounded-rect",
+  "ellipse",
+  "triangle",
+  "diamond",
+  "pentagon",
+  "hexagon",
+  "star",
+  "heart",
+  "speech-bubble",
+  "line",
+  "arrow",
+] as const;
+
+export type ShapeKind = (typeof SHAPE_KINDS)[number];
+
 export interface ShapeDesignNode extends BaseDesignNode {
   kind: "shape";
-  shape: "rect" | "ellipse";
+  shape: ShapeKind;
   fill: string;
   cornerRadius: number;
 }
@@ -78,8 +95,8 @@ export interface Revision {
   snapshot: ProjectSnapshot;
 }
 
-export interface ImageStitchProject {
-  schemaVersion: "imagestitch.project.v1";
+export interface GlassWareProject {
+  schemaVersion: "glassware.project.v1";
   id: string;
   name: string;
   residency: "local";
@@ -91,7 +108,7 @@ export interface ImageStitchProject {
   currentRevisionId: string;
 }
 
-const DEFAULT_BACKGROUND = "#f8f0df";
+const DEFAULT_BACKGROUND = "#ffffff";
 
 export const FULL_IMAGE_CROP: NormalizedCrop = { x: 0, y: 0, width: 1, height: 1 };
 export const DEFAULT_IMAGE_ADJUSTMENTS: ImageAdjustments = {
@@ -139,8 +156,8 @@ export function createStarterObjects(): DesignNode[] {
       opacity: 1,
       visible: true,
       locked: false,
-      fill: "#19352e",
-      fontFamily: "Georgia",
+      fill: "#111111",
+      fontFamily: "Helvetica",
       fontSize: 98,
       fontStyle: "bold",
       align: "left",
@@ -161,7 +178,7 @@ export function createStarterObjects(): DesignNode[] {
       opacity: 1,
       visible: true,
       locked: false,
-      fill: "#db5d3f",
+      fill: "#111111",
       cornerRadius: 9,
     },
     {
@@ -179,7 +196,7 @@ export function createStarterObjects(): DesignNode[] {
       opacity: 0.84,
       visible: true,
       locked: false,
-      fill: "#19352e",
+      fill: "#111111",
       fontFamily: "Arial",
       fontSize: 34,
       fontStyle: "normal",
@@ -189,7 +206,7 @@ export function createStarterObjects(): DesignNode[] {
   ];
 }
 
-export function createProject(name = "Untitled stitch", starter = true): ImageStitchProject {
+export function createProject(name = "Untitled stitch", starter = true): GlassWareProject {
   const createdAt = now();
   const revisionId = newId();
   const snapshot: ProjectSnapshot = {
@@ -197,7 +214,7 @@ export function createProject(name = "Untitled stitch", starter = true): ImageSt
     objects: starter ? createStarterObjects() : [],
   };
   return {
-    schemaVersion: "imagestitch.project.v1",
+    schemaVersion: "glassware.project.v1",
     id: newId(),
     name,
     residency: "local",
@@ -218,28 +235,28 @@ export function createProject(name = "Untitled stitch", starter = true): ImageSt
   };
 }
 
-export function projectSnapshot(project: ImageStitchProject): ProjectSnapshot {
+export function projectSnapshot(project: GlassWareProject): ProjectSnapshot {
   return cloneSnapshot({ canvas: project.canvas, objects: project.objects });
 }
 
-export function currentRevisionIndex(project: ImageStitchProject): number {
+export function currentRevisionIndex(project: GlassWareProject): number {
   const index = project.revisions.findIndex((revision) => revision.id === project.currentRevisionId);
   return index === -1 ? project.revisions.length - 1 : index;
 }
 
-export function canUndo(project: ImageStitchProject): boolean {
+export function canUndo(project: GlassWareProject): boolean {
   return currentRevisionIndex(project) > 0;
 }
 
-export function canRedo(project: ImageStitchProject): boolean {
+export function canRedo(project: GlassWareProject): boolean {
   return currentRevisionIndex(project) < project.revisions.length - 1;
 }
 
 export function commitSnapshot(
-  project: ImageStitchProject,
+  project: GlassWareProject,
   summary: string,
   snapshot: ProjectSnapshot,
-): ImageStitchProject {
+): GlassWareProject {
   const createdAt = now();
   const currentIndex = currentRevisionIndex(project);
   const revisions = project.revisions.slice(0, currentIndex + 1);
@@ -261,7 +278,7 @@ export function commitSnapshot(
   };
 }
 
-function moveToRevision(project: ImageStitchProject, index: number): ImageStitchProject {
+function moveToRevision(project: GlassWareProject, index: number): GlassWareProject {
   const revision = project.revisions[index];
   if (!revision) return project;
   const snapshot = cloneSnapshot(revision.snapshot);
@@ -274,18 +291,18 @@ function moveToRevision(project: ImageStitchProject, index: number): ImageStitch
   };
 }
 
-export function undoProject(project: ImageStitchProject): ImageStitchProject {
+export function undoProject(project: GlassWareProject): GlassWareProject {
   return moveToRevision(project, currentRevisionIndex(project) - 1);
 }
 
-export function redoProject(project: ImageStitchProject): ImageStitchProject {
+export function redoProject(project: GlassWareProject): GlassWareProject {
   return moveToRevision(project, currentRevisionIndex(project) + 1);
 }
 
 export function setCanvasPreset(
-  project: ImageStitchProject,
+  project: GlassWareProject,
   preset: Exclude<CanvasPreset, "custom">,
-): ImageStitchProject {
+): GlassWareProject {
   const canvas = { ...CANVAS_PRESETS[preset], background: project.canvas.background };
   return commitSnapshot(project, `Canvas set to ${preset}`, { canvas, objects: project.objects });
 }
@@ -329,7 +346,7 @@ function normalizeDesignNode(value: unknown): DesignNode | null {
     return { ...common, kind: "text", text: node.text, fill: node.fill, fontFamily: node.fontFamily, fontSize: node.fontSize, fontStyle: node.fontStyle, align: node.align as TextDesignNode["align"], lineHeight: node.lineHeight };
   }
   if (node.kind === "shape") {
-    if (! ["rect", "ellipse"].includes(String(node.shape)) || typeof node.fill !== "string" || !node.fill || !finiteNumber(node.cornerRadius, 0)) return null;
+    if (!SHAPE_KINDS.includes(node.shape as ShapeKind) || typeof node.fill !== "string" || !node.fill || !finiteNumber(node.cornerRadius, 0)) return null;
     return { ...common, kind: "shape", shape: node.shape as ShapeDesignNode["shape"], fill: node.fill, cornerRadius: node.cornerRadius };
   }
   if (node.kind === "image") {
@@ -384,14 +401,14 @@ function normalizeCanvas(value: unknown): CanvasSettings | null {
   };
 }
 
-export function normalizeProject(value: unknown): ImageStitchProject | null {
+export function normalizeProject(value: unknown): GlassWareProject | null {
   if (!value || typeof value !== "object") return null;
-  const candidate = value as Partial<ImageStitchProject> & {
+  const candidate = value as Partial<GlassWareProject> & {
     canvas?: Partial<CanvasSettings>;
     objects?: Array<Record<string, unknown>>;
     revisions?: Array<Partial<Revision>>;
   };
-  if (candidate.schemaVersion !== "imagestitch.project.v1" || !candidate.id || !candidate.name) {
+  if (!["glassware.project.v1", "imagestitch.project.v1"].includes(String(candidate.schemaVersion)) || !candidate.id || !candidate.name) {
     return null;
   }
 
@@ -435,7 +452,7 @@ export function normalizeProject(value: unknown): ImageStitchProject | null {
     : revisions.at(-1)!.id;
 
   return {
-    schemaVersion: "imagestitch.project.v1",
+    schemaVersion: "glassware.project.v1",
     id: candidate.id,
     name: candidate.name,
     residency: "local",

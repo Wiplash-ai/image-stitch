@@ -8,6 +8,7 @@ import {
   type ImageDesignNode,
   type NormalizedCrop,
   type ShapeDesignNode,
+  type ShapeKind,
   type TextDesignNode,
 } from "./model";
 import type { StoredAsset } from "./storage";
@@ -15,6 +16,124 @@ import type { StoredAsset } from "./storage";
 export const DESIGN_OBJECT_NAME = "design-object";
 
 type AssetResolver = (assetId: string) => Promise<StoredAsset | null>;
+
+function regularPolygonPoints(width: number, height: number, sides: number, innerRatio?: number): number[] {
+  const points: number[] = [];
+  const count = innerRatio ? sides * 2 : sides;
+  for (let index = 0; index < count; index += 1) {
+    const angle = -Math.PI / 2 + (index * Math.PI * 2) / count;
+    const radius = innerRatio && index % 2 ? innerRatio : 1;
+    points.push(
+      width / 2 + Math.cos(angle) * width * 0.48 * radius,
+      height / 2 + Math.sin(angle) * height * 0.48 * radius,
+    );
+  }
+  return points;
+}
+
+function drawPoints(context: Konva.Context, points: number[]): void {
+  context.moveTo(points[0], points[1]);
+  for (let index = 2; index < points.length; index += 2) context.lineTo(points[index], points[index + 1]);
+  context.closePath();
+}
+
+function createPathShape(node: ShapeDesignNode): Konva.Shape {
+  return new Konva.Shape({
+    ...commonAttributes(node),
+    fill: node.fill,
+    designFill: node.fill,
+    designShape: node.shape,
+    sceneFunc(context, shape) {
+      const width = shape.width();
+      const height = shape.height();
+      context.beginPath();
+      if (node.shape === "heart") {
+        context.moveTo(width / 2, height * 0.92);
+        context.bezierCurveTo(width * 0.42, height * 0.78, width * 0.08, height * 0.56, width * 0.08, height * 0.3);
+        context.bezierCurveTo(width * 0.08, height * 0.08, width * 0.36, height * 0.02, width / 2, height * 0.24);
+        context.bezierCurveTo(width * 0.64, height * 0.02, width * 0.92, height * 0.08, width * 0.92, height * 0.3);
+        context.bezierCurveTo(width * 0.92, height * 0.56, width * 0.58, height * 0.78, width / 2, height * 0.92);
+        context.closePath();
+      } else if (node.shape === "speech-bubble") {
+        const radius = Math.min(width, height) * 0.12;
+        const bodyBottom = height * 0.76;
+        context.moveTo(radius, 0);
+        context.lineTo(width - radius, 0);
+        context.quadraticCurveTo(width, 0, width, radius);
+        context.lineTo(width, bodyBottom - radius);
+        context.quadraticCurveTo(width, bodyBottom, width - radius, bodyBottom);
+        context.lineTo(width * 0.38, bodyBottom);
+        context.lineTo(width * 0.2, height);
+        context.lineTo(width * 0.23, bodyBottom);
+        context.lineTo(radius, bodyBottom);
+        context.quadraticCurveTo(0, bodyBottom, 0, bodyBottom - radius);
+        context.lineTo(0, radius);
+        context.quadraticCurveTo(0, 0, radius, 0);
+        context.closePath();
+      } else {
+        const points = node.shape === "triangle"
+          ? regularPolygonPoints(width, height, 3)
+          : node.shape === "diamond"
+            ? [width / 2, 0, width, height / 2, width / 2, height, 0, height / 2]
+            : node.shape === "pentagon"
+              ? regularPolygonPoints(width, height, 5)
+              : node.shape === "hexagon"
+                ? regularPolygonPoints(width, height, 6)
+                : regularPolygonPoints(width, height, 5, 0.44);
+        drawPoints(context, points);
+      }
+      context.fillStrokeShape(shape);
+    },
+  });
+}
+
+function createShapeNode(node: ShapeDesignNode): Konva.Shape {
+  const shared = {
+    ...commonAttributes(node),
+    designFill: node.fill,
+    designShape: node.shape,
+  };
+  if (node.shape === "rect" || node.shape === "rounded-rect") {
+    return new Konva.Rect({
+      ...shared,
+      fill: node.fill,
+      cornerRadius: node.shape === "rounded-rect" ? Math.max(node.cornerRadius, 24) : 0,
+    });
+  }
+  if (node.shape === "ellipse") {
+    return new Konva.Ellipse({
+      ...shared,
+      x: node.x + node.width / 2,
+      y: node.y + node.height / 2,
+      radiusX: node.width / 2,
+      radiusY: node.height / 2,
+      fill: node.fill,
+    });
+  }
+  if (node.shape === "line") {
+    return new Konva.Line({
+      ...shared,
+      points: [0, node.height / 2, node.width, node.height / 2],
+      stroke: node.fill,
+      strokeWidth: Math.max(8, node.height * 0.16),
+      lineCap: "round",
+    });
+  }
+  if (node.shape === "arrow") {
+    return new Konva.Arrow({
+      ...shared,
+      points: [0, node.height / 2, node.width, node.height / 2],
+      fill: node.fill,
+      stroke: node.fill,
+      strokeWidth: Math.max(8, node.height * 0.12),
+      pointerLength: Math.min(node.width * 0.22, node.height * 0.7),
+      pointerWidth: Math.min(node.width * 0.24, node.height * 0.8),
+      lineCap: "round",
+      lineJoin: "round",
+    });
+  }
+  return createPathShape(node);
+}
 
 function commonAttributes(node: DesignNode) {
   return {
@@ -104,31 +223,15 @@ export async function designNodeToKonva(node: DesignNode, resolveAsset: AssetRes
     });
   }
   if (node.kind === "shape") {
-    if (node.shape === "ellipse") {
-      return new Konva.Ellipse({
-        ...commonAttributes(node),
-        x: node.x + node.width / 2,
-        y: node.y + node.height / 2,
-        radiusX: node.width / 2,
-        radiusY: node.height / 2,
-        width: node.width,
-        height: node.height,
-        fill: node.fill,
-      });
-    }
-    return new Konva.Rect({
-      ...commonAttributes(node),
-      fill: node.fill,
-      cornerRadius: node.cornerRadius,
-    });
+    return createShapeNode(node);
   }
 
   const asset = await resolveAsset(node.assetId);
   if (!asset) {
     return new Konva.Rect({
       ...commonAttributes(node),
-      fill: "#eaded1",
-      stroke: "#bd4c38",
+      fill: "#f2f2f2",
+      stroke: "#b42318",
       dash: [12, 8],
       assetId: node.assetId,
       normalizedCrop: { ...node.crop },
@@ -170,7 +273,7 @@ export function konvaNodeToDesign(node: Konva.Node): DesignNode {
       ...readCommon(node),
       kind,
       text: text.text(),
-      fill: String(text.fill() || "#19352e"),
+      fill: String(text.fill() || "#111111"),
       fontFamily: text.fontFamily(),
       fontSize: text.fontSize(),
       fontStyle: text.fontStyle(),
@@ -182,14 +285,15 @@ export function konvaNodeToDesign(node: Konva.Node): DesignNode {
     const shape = node as Konva.Shape;
     const isEllipse = node instanceof Konva.Ellipse;
     const common = readCommon(node);
+    const shapeKind = (node.getAttr("designShape") || (isEllipse ? "ellipse" : "rect")) as ShapeKind;
     return {
       ...common,
       x: isEllipse ? node.x() - node.width() / 2 : common.x,
       y: isEllipse ? node.y() - node.height() / 2 : common.y,
       kind,
-      shape: isEllipse ? "ellipse" : "rect",
-      fill: String(shape.fill() || "#db5d3f"),
-      cornerRadius: node instanceof Konva.Rect ? Number(node.cornerRadius()) : 0,
+      shape: shapeKind,
+      fill: String(node.getAttr("designFill") || shape.fill() || shape.stroke() || "#111111"),
+      cornerRadius: shapeKind === "rounded-rect" && node instanceof Konva.Rect ? Number(node.cornerRadius()) : 0,
     } satisfies ShapeDesignNode;
   }
   return {
@@ -215,4 +319,11 @@ export function applyLockedState(node: Konva.Node, locked: boolean): void {
   node.setAttr("designLocked", locked);
   node.draggable(!locked);
   node.listening(!locked);
+}
+
+export function applyDesignFill(node: Konva.Node, color: string): void {
+  node.setAttr("designFill", color);
+  if (!(node instanceof Konva.Shape)) return;
+  if (node instanceof Konva.Line || node instanceof Konva.Arrow) node.stroke(color);
+  node.fill(color);
 }

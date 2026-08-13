@@ -37,12 +37,12 @@ export function AiConnectionsPanel({
               <div className="connection-detail"><LockKeyhole size={13} />{definition.detail}</div>
               {connection ? (
                 <>
-                  <div className="connection-status"><CheckCircle2 size={14} /><span>{connection.status === "preview" ? "Preview connected" : connection.status === "attention" ? "Needs attention" : "Connected"}</span><small>{connection.label}</small></div>
+                  <div className="connection-status"><CheckCircle2 size={14} /><span>{connection.status === "attention" ? "Needs attention" : "Connected"}</span><small>{connection.label}</small></div>
                   <button className="disconnect-button" disabled={busy} onClick={() => void model.disconnect(connection.id)}><Unplug size={14} /> Disconnect</button>
                 </>
               ) : account ? (
-                <button className="connect-button" disabled={busy} onClick={() => void model.connect(definition.kind, projectId)}>
-                  {model.mode === "local-preview" ? "Preview connection" : "Connect securely"}
+                <button className="connect-button" title={model.mode === "device" ? "Cloud account service required" : `Connect ${definition.name}`} disabled={busy || model.mode === "device"} onClick={() => void model.connect(definition.kind, projectId)}>
+                  {model.mode === "device" ? "Cloud connection required" : "Connect securely"}
                 </button>
               ) : (
                 <button className="connect-button" onClick={openAccount}>Sign in to connect</button>
@@ -51,7 +51,7 @@ export function AiConnectionsPanel({
           );
         })}
       </div>
-      <div className="panel-section ai-note"><Bot size={20} /><div><strong>No bundled AI surcharge</strong><p>ChatGPT/Codex subscription access and separately billed API access are distinct. ImageStitch never converts one into the other.</p></div></div>
+      <div className="panel-section ai-note"><Bot size={20} /><div><strong>No bundled AI surcharge</strong><p>ChatGPT/Codex subscription access and separately billed API access are distinct. GlassWare never converts one into the other.</p></div></div>
       {(model.notice || model.error) && (
         <button className={`panel-message ${model.error ? "error" : "success"}`} onClick={model.clearMessage}>
           {model.error || model.notice}<small>Dismiss</small>

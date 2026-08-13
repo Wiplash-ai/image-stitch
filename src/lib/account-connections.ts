@@ -1,15 +1,17 @@
-export const ACCOUNT_PREVIEW_STORAGE_KEY = "imagestitch.account-preview.v1";
+export const ACCOUNT_DEVICE_STORAGE_KEY = "glassware.device-account.v1";
+const LEGACY_ACCOUNT_STORAGE_KEYS = ["imagestitch.device-account.v1", "imagestitch.account-preview.v1", "glassware.account-preview.v1"] as const;
 
-export type AccountClientMode = "service" | "local-preview";
+export type AccountClientMode = "service" | "device";
+export type SignInProvider = "wiplash" | "google" | "github";
 export type AiConnectionKind = "chatgpt_codex_plugin" | "openai_api";
-export type AiConnectionStatus = "connected" | "attention" | "preview";
+export type AiConnectionStatus = "connected" | "attention";
 
 export interface AccountSession {
   id: string;
   email: string;
   displayName: string;
   expiresAt: string;
-  mode: "authenticated" | "preview";
+  mode: "authenticated" | "device";
 }
 
 export interface AiConnection {
@@ -29,7 +31,7 @@ export interface AccountSnapshot {
 }
 
 export interface MagicLinkReceipt {
-  status: "email-sent" | "preview-signed-in";
+  status: "email-sent" | "device-session";
   email: string;
   expiresAt: string;
   snapshot?: AccountSnapshot;
@@ -41,10 +43,16 @@ export interface ConnectionAuthorization {
   snapshot?: AccountSnapshot;
 }
 
+export interface SignInAuthorization {
+  status: "redirect";
+  authorizationUrl: string;
+}
+
 export interface AccountConnectionsClient {
   readonly mode: AccountClientMode;
   getSnapshot(): Promise<AccountSnapshot>;
   requestMagicLink(email: string, returnUrl: string): Promise<MagicLinkReceipt>;
+  startSignIn(provider: SignInProvider, returnUrl: string): Promise<SignInAuthorization>;
   signOut(): Promise<AccountSnapshot>;
   startConnection(kind: AiConnectionKind, returnUrl: string, projectId?: string): Promise<ConnectionAuthorization>;
   disconnectConnection(connectionId: string): Promise<AccountSnapshot>;
@@ -73,8 +81,8 @@ export const AI_CONNECTION_CATALOG: ReadonlyArray<{
     kind: "chatgpt_codex_plugin",
     eyebrow: "SUBSCRIPTION CONNECTION",
     name: "ChatGPT / Codex",
-    description: "Let an authenticated ChatGPT or Codex client inspect the current project and propose reviewable edits through ImageStitch tools.",
-    detail: "MCP plugin + project-scoped ImageStitch OAuth",
+    description: "Let an authenticated ChatGPT or Codex client inspect the current project and propose reviewable edits through GlassWare tools.",
+    detail: "MCP plugin + project-scoped GlassWare OAuth",
   },
   {
     kind: "openai_api",
@@ -119,7 +127,7 @@ function parseAccount(value: unknown): AccountSession | null {
   if (value === null || value === undefined) return null;
   if (!isRecord(value)) throw new Error("Account service returned an invalid account.");
   const mode = value.mode;
-  if (mode !== "authenticated" && mode !== "preview") throw new Error("Account service returned an invalid account mode.");
+  if (mode !== "authenticated" && mode !== "device") throw new Error("Account service returned an invalid account mode.");
   return {
     id: requireString(value.id, "account id"),
     email: requireString(value.email, "account email"),
@@ -134,7 +142,7 @@ function parseConnection(value: unknown): AiConnection {
   const kind = value.kind;
   const status = value.status;
   if (kind !== "chatgpt_codex_plugin" && kind !== "openai_api") throw new Error("Account service returned an unknown AI connection kind.");
-  if (status !== "connected" && status !== "attention" && status !== "preview") throw new Error("Account service returned an invalid AI connection status.");
+  if (status !== "connected" && status !== "attention") throw new Error("Account service returned an invalid AI connection status.");
   return {
     id: requireString(value.id, "connection id"),
     kind,
@@ -199,7 +207,7 @@ export function createAccountServiceClient(options: ServiceClientOptions): Accou
     const headers = new Headers(init.headers);
     headers.set("accept", "application/json");
     if (init.body) headers.set("content-type", "application/json");
-    if (init.method && init.method !== "GET" && csrfToken) headers.set("x-imagestitch-csrf", csrfToken);
+    if (init.method && init.method !== "GET" && csrfToken) headers.set("x-glassware-csrf", csrfToken);
     const response = await fetcher(`${baseUrl}${path}`, { ...init, headers, credentials: "include" });
     const payload = await response.json().catch(() => null);
     if (!response.ok) throw new Error(parseErrorMessage(payload, `Account service request failed (${response.status}).`));
@@ -227,6 +235,19 @@ export function createAccountServiceClient(options: ServiceClientOptions): Accou
         status: "email-sent",
         email: requireString(payload.email, "sign-in email"),
         expiresAt: requireString(payload.expiresAt, "sign-in expiry"),
+      };
+    },
+    async startSignIn(provider, returnUrl) {
+      const payload = await request("/v1/auth/authorizations", {
+        method: "POST",
+        body: JSON.stringify({ provider, returnUrl }),
+      });
+      if (!isRecord(payload) || payload.status !== "redirect") {
+        throw new Error("Account service returned an invalid sign-in authorization.");
+      }
+      return {
+        status: "redirect",
+        authorizationUrl: validateAuthorizationUrl(requireString(payload.authorizationUrl, "authorization URL")),
       };
     },
     async signOut() {
@@ -260,22 +281,30 @@ export function createAccountServiceClient(options: ServiceClientOptions): Accou
   };
 }
 
-function loadPreviewSnapshot(storage: StorageLike | undefined): AccountSnapshot {
+function loadDeviceSnapshot(storage: StorageLike | undefined): AccountSnapshot {
   if (!storage) return { ...EMPTY_SNAPSHOT };
   try {
-    const raw = storage.getItem(ACCOUNT_PREVIEW_STORAGE_KEY);
-    return raw ? parseAccountSnapshot(JSON.parse(raw)) : { ...EMPTY_SNAPSHOT };
+    const current = storage.getItem(ACCOUNT_DEVICE_STORAGE_KEY);
+    if (current) return parseAccountSnapshot(JSON.parse(current));
+    for (const key of LEGACY_ACCOUNT_STORAGE_KEYS) {
+      const legacy = storage.getItem(key);
+      if (!legacy) continue;
+      const snapshot = parseAccountSnapshot(JSON.parse(legacy));
+      storage.setItem(ACCOUNT_DEVICE_STORAGE_KEY, JSON.stringify(snapshot));
+      return snapshot;
+    }
+    return { ...EMPTY_SNAPSHOT };
   } catch {
     try {
-      storage.removeItem(ACCOUNT_PREVIEW_STORAGE_KEY);
+      storage.removeItem(ACCOUNT_DEVICE_STORAGE_KEY);
     } catch {
-      // Preview persistence is best effort and never blocks the editor.
+      // Device-profile persistence is best effort and never blocks the editor.
     }
     return { ...EMPTY_SNAPSHOT };
   }
 }
 
-function previewDisplayName(email: string): string {
+function deviceDisplayName(email: string): string {
   const localPart = email.split("@")[0] ?? "Creator";
   return localPart
     .split(/[._-]+/)
@@ -292,15 +321,20 @@ function availableLocalStorage(): StorageLike | undefined {
   }
 }
 
-export function createLocalPreviewAccountClient(storage: StorageLike | undefined = availableLocalStorage()): AccountConnectionsClient {
-  let snapshot = loadPreviewSnapshot(storage);
+export function createDeviceAccountClient(storage: StorageLike | undefined = availableLocalStorage()): AccountConnectionsClient {
+  let snapshot = loadDeviceSnapshot(storage);
+  try {
+    LEGACY_ACCOUNT_STORAGE_KEYS.forEach((key) => storage?.removeItem(key));
+  } catch {
+    // Old prototype account state is safe to leave behind if storage is denied.
+  }
 
   function persist(next: AccountSnapshot): AccountSnapshot {
     snapshot = next;
     try {
-      storage?.setItem(ACCOUNT_PREVIEW_STORAGE_KEY, JSON.stringify(next));
+      storage?.setItem(ACCOUNT_DEVICE_STORAGE_KEY, JSON.stringify(next));
     } catch {
-      // The visibly local preview can continue in memory if storage is denied.
+      // The device profile can continue in memory if storage is denied.
     }
     return next;
   }
@@ -311,7 +345,7 @@ export function createLocalPreviewAccountClient(storage: StorageLike | undefined
   }
 
   return {
-    mode: "local-preview",
+    mode: "device",
     async getSnapshot() {
       return snapshot;
     },
@@ -321,45 +355,32 @@ export function createLocalPreviewAccountClient(storage: StorageLike | undefined
       const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
       const next = persist({
         account: {
-          id: `preview-${crypto.randomUUID()}`,
+          id: `device-${crypto.randomUUID()}`,
           email: normalized,
-          displayName: previewDisplayName(normalized),
+          displayName: deviceDisplayName(normalized),
           expiresAt,
-          mode: "preview",
+          mode: "device",
         },
         connections: [],
         syncEnabled: false,
       });
-      return { status: "preview-signed-in", email: normalized, expiresAt, snapshot: next };
+      return { status: "device-session", email: normalized, expiresAt, snapshot: next };
+    },
+    async startSignIn() {
+      throw new Error("Cloud sign-in requires the GlassWare account service.");
     },
     async signOut() {
       try {
-        storage?.removeItem(ACCOUNT_PREVIEW_STORAGE_KEY);
+        storage?.removeItem(ACCOUNT_DEVICE_STORAGE_KEY);
       } catch {
-        // The current in-memory preview session still ends immediately.
+        // The current in-memory device session still ends immediately.
       }
       snapshot = { ...EMPTY_SNAPSHOT };
       return snapshot;
     },
-    async startConnection(kind) {
+    async startConnection() {
       requireAccount();
-      const existing = snapshot.connections.find((connection) => connection.kind === kind);
-      if (existing) return { status: "connected", snapshot };
-      const definition = AI_CONNECTION_CATALOG.find((item) => item.kind === kind);
-      const next = persist({
-        ...snapshot,
-        connections: [
-          ...snapshot.connections,
-          {
-            id: `preview-connection-${crypto.randomUUID()}`,
-            kind,
-            status: "preview",
-            label: `${definition?.name ?? "AI"} preview`,
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      });
-      return { status: "connected", snapshot: next };
+      throw new Error("AI connections require the GlassWare account service. This build is not connected to it yet.");
     },
     async disconnectConnection(connectionId) {
       requireAccount();
@@ -367,6 +388,7 @@ export function createLocalPreviewAccountClient(storage: StorageLike | undefined
     },
     async setSyncEnabled(enabled) {
       requireAccount();
+      if (enabled) throw new Error("Project sync requires the GlassWare account service. This build is not connected to it yet.");
       return persist({ ...snapshot, syncEnabled: enabled });
     },
   };

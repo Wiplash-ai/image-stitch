@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACCOUNT_PREVIEW_STORAGE_KEY,
+  ACCOUNT_DEVICE_STORAGE_KEY,
   createAccountServiceClient,
-  createLocalPreviewAccountClient,
+  createDeviceAccountClient,
   parseAccountSnapshot,
   validateAuthorizationUrl,
   validateServiceBaseUrl,
@@ -30,29 +30,26 @@ const authenticatedSnapshot = {
 } as const;
 
 describe("account and AI connection clients", () => {
-  it("dogfoods account and connection states locally without pretending to authenticate", async () => {
+  it("stores a device profile without claiming cloud authentication or AI access", async () => {
     const storage = new MemoryStorage();
-    const client = createLocalPreviewAccountClient(storage);
+    const client = createDeviceAccountClient(storage);
     const receipt = await client.requestMagicLink(" Mom.Example@example.com ", "http://localhost:4173");
-    expect(receipt.status).toBe("preview-signed-in");
-    expect(receipt.snapshot?.account).toMatchObject({ email: "mom.example@example.com", mode: "preview" });
+    expect(receipt.status).toBe("device-session");
+    expect(receipt.snapshot?.account).toMatchObject({ email: "mom.example@example.com", mode: "device" });
 
-    const plugin = await client.startConnection("chatgpt_codex_plugin", "http://localhost:4173", "project-1");
-    expect(plugin.snapshot?.connections[0]).toMatchObject({ kind: "chatgpt_codex_plugin", status: "preview" });
-    await client.startConnection("openai_api", "http://localhost:4173", "project-1");
-    await client.setSyncEnabled(true);
+    await expect(client.startConnection("chatgpt_codex_plugin", "http://localhost:4173", "project-1")).rejects.toThrow("account service");
+    await expect(client.startSignIn("google", "http://localhost:4173")).rejects.toThrow("account service");
+    await expect(client.setSyncEnabled(true)).rejects.toThrow("account service");
 
-    const restored = await createLocalPreviewAccountClient(storage).getSnapshot();
-    expect(restored.connections.map((connection) => connection.kind)).toEqual(["chatgpt_codex_plugin", "openai_api"]);
-    expect(restored.syncEnabled).toBe(true);
-    const stored = storage.getItem(ACCOUNT_PREVIEW_STORAGE_KEY) ?? "";
+    const restored = await createDeviceAccountClient(storage).getSnapshot();
+    expect(restored.connections).toEqual([]);
+    expect(restored.syncEnabled).toBe(false);
+    const stored = storage.getItem(ACCOUNT_DEVICE_STORAGE_KEY) ?? "";
     expect(stored).not.toMatch(/apiKey|accessToken|refreshToken|password|secret|authJson/i);
 
-    await client.disconnectConnection(restored.connections[0].id);
-    expect((await client.getSnapshot()).connections).toHaveLength(1);
     await client.signOut();
     expect(await client.getSnapshot()).toEqual({ account: null, connections: [], syncEnabled: false });
-    expect(storage.getItem(ACCOUNT_PREVIEW_STORAGE_KEY)).toBeNull();
+    expect(storage.getItem(ACCOUNT_DEVICE_STORAGE_KEY)).toBeNull();
   });
 
   it("uses secure cookies, CSRF-bound mutations, and redirect receipts with the service client", async () => {
@@ -60,21 +57,37 @@ describe("account and AI connection clients", () => {
     const fetcher: typeof fetch = async (input, init) => {
       requests.push({ url: String(input), init });
       if (String(input).endsWith("/v1/account")) return Response.json(authenticatedSnapshot);
-      return Response.json({ status: "redirect", authorizationUrl: "https://auth.imagestitch.dev/connect/request-1" });
+      if (String(input).endsWith("/v1/auth/magic-links")) return Response.json({
+        status: "email-sent",
+        email: "mom@example.com",
+        expiresAt: "2026-08-14T00:00:00.000Z",
+      });
+      if (String(input).endsWith("/v1/auth/authorizations")) {
+        return Response.json({ status: "redirect", authorizationUrl: "https://auth.glassware.dev/sign-in/request-1" });
+      }
+      return Response.json({ status: "redirect", authorizationUrl: "https://auth.glassware.dev/connect/request-1" });
     };
-    const client = createAccountServiceClient({ baseUrl: "https://account.imagestitch.dev/", fetch: fetcher });
+    const client = createAccountServiceClient({ baseUrl: "https://account.glassware.dev/", fetch: fetcher });
     await client.getSnapshot();
-    const authorization = await client.startConnection("chatgpt_codex_plugin", "https://app.imagestitch.dev", "project-1");
+    const signIn = await client.requestMagicLink("Mom@example.com", "https://app.glassware.dev");
+    const providerSignIn = await client.startSignIn("github", "https://app.glassware.dev");
+    const authorization = await client.startConnection("chatgpt_codex_plugin", "https://app.glassware.dev", "project-1");
 
-    expect(authorization).toEqual({ status: "redirect", authorizationUrl: "https://auth.imagestitch.dev/connect/request-1" });
+    expect(signIn).toMatchObject({ status: "email-sent", email: "mom@example.com" });
+    expect(providerSignIn).toEqual({ status: "redirect", authorizationUrl: "https://auth.glassware.dev/sign-in/request-1" });
+    expect(authorization).toEqual({ status: "redirect", authorizationUrl: "https://auth.glassware.dev/connect/request-1" });
     expect(requests[0].init?.credentials).toBe("include");
-    expect(requests[1].url).toBe("https://account.imagestitch.dev/v1/connections/chatgpt_codex_plugin/authorizations");
-    expect(new Headers(requests[1].init?.headers).get("x-imagestitch-csrf")).toBe("csrf-only");
-    expect(requests[1].init?.body).toBe(JSON.stringify({ returnUrl: "https://app.imagestitch.dev", projectId: "project-1" }));
+    expect(requests[1].url).toBe("https://account.glassware.dev/v1/auth/magic-links");
+    expect(requests[1].init?.body).toBe(JSON.stringify({ email: "mom@example.com", returnUrl: "https://app.glassware.dev" }));
+    expect(requests[2].url).toBe("https://account.glassware.dev/v1/auth/authorizations");
+    expect(requests[2].init?.body).toBe(JSON.stringify({ provider: "github", returnUrl: "https://app.glassware.dev" }));
+    expect(requests[3].url).toBe("https://account.glassware.dev/v1/connections/chatgpt_codex_plugin/authorizations");
+    expect(new Headers(requests[3].init?.headers).get("x-glassware-csrf")).toBe("csrf-only");
+    expect(requests[3].init?.body).toBe(JSON.stringify({ returnUrl: "https://app.glassware.dev", projectId: "project-1" }));
   });
 
   it("rejects unsafe service and authorization URLs", () => {
-    expect(() => validateServiceBaseUrl("http://account.imagestitch.dev")).toThrow("HTTPS");
+    expect(() => validateServiceBaseUrl("http://account.glassware.dev")).toThrow("HTTPS");
     expect(validateServiceBaseUrl("http://127.0.0.1:8789/")).toBe("http://127.0.0.1:8789");
     expect(() => validateAuthorizationUrl("javascript:alert(1)")).toThrow("unsafe");
   });
