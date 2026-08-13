@@ -127,8 +127,8 @@ export async function designNodeToKonva(node: DesignNode, resolveAsset: AssetRes
   if (!asset) {
     return new Konva.Rect({
       ...commonAttributes(node),
-      fill: "#eaded1",
-      stroke: "#bd4c38",
+      fill: "#f2f2f2",
+      stroke: "#b42318",
       dash: [12, 8],
       assetId: node.assetId,
       normalizedCrop: { ...node.crop },
@@ -170,7 +170,7 @@ export function konvaNodeToDesign(node: Konva.Node): DesignNode {
       ...readCommon(node),
       kind,
       text: text.text(),
-      fill: String(text.fill() || "#19352e"),
+      fill: String(text.fill() || "#111111"),
       fontFamily: text.fontFamily(),
       fontSize: text.fontSize(),
       fontStyle: text.fontStyle(),
@@ -188,7 +188,7 @@ export function konvaNodeToDesign(node: Konva.Node): DesignNode {
       y: isEllipse ? node.y() - node.height() / 2 : common.y,
       kind,
       shape: isEllipse ? "ellipse" : "rect",
-      fill: String(shape.fill() || "#db5d3f"),
+      fill: String(shape.fill() || "#111111"),
       cornerRadius: node instanceof Konva.Rect ? Number(node.cornerRadius()) : 0,
     } satisfies ShapeDesignNode;
   }

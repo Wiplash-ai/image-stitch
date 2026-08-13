@@ -75,7 +75,7 @@ import { AccountPanel } from "./components/AccountPanel";
 import { AiConnectionsPanel } from "./components/AiConnectionsPanel";
 import { useAccountConnections } from "./hooks/use-account-connections";
 
-const SWATCHES = ["#19352e", "#db5d3f", "#e8af45", "#6d8f77", "#5273a8", "#f8f0df"];
+const SWATCHES = ["#111111", "#ffffff", "#d9d9d9", "#ff5d42", "#3f7fff", "#35a36f"];
 const MAX_STAGE_SIZE = 640;
 const FONT_FAMILIES = ["Georgia", "Arial", "Helvetica", "Trebuchet MS", "Courier New"];
 
@@ -204,10 +204,10 @@ function Editor({
     const transformer = new Konva.Transformer({
       rotateEnabled: true,
       keepRatio: false,
-      borderStroke: "#db5d3f",
+      borderStroke: "#111111",
       borderStrokeWidth: 2 / dimensions.scale,
-      anchorFill: "#fffdf8",
-      anchorStroke: "#19352e",
+      anchorFill: "#ffffff",
+      anchorStroke: "#111111",
       anchorStrokeWidth: 2 / dimensions.scale,
       anchorSize: 12 / dimensions.scale,
       padding: 4 / dimensions.scale,
@@ -262,8 +262,8 @@ function Editor({
     if (yMatch) node.y(node.y() + yMatch.delta);
     const activeScale = displayDimensions(projectRef.current).scale;
     const strokeWidth = 1.5 / activeScale;
-    if (xMatch) layer.add(new Konva.Line({ name: "snap-guide", points: [xMatch.guide, 0, xMatch.guide, canvas.height], stroke: "#db5d3f", strokeWidth, dash: [10 / activeScale, 7 / activeScale], listening: false }));
-    if (yMatch) layer.add(new Konva.Line({ name: "snap-guide", points: [0, yMatch.guide, canvas.width, yMatch.guide], stroke: "#db5d3f", strokeWidth, dash: [10 / activeScale, 7 / activeScale], listening: false }));
+    if (xMatch) layer.add(new Konva.Line({ name: "snap-guide", points: [xMatch.guide, 0, xMatch.guide, canvas.height], stroke: "#111111", strokeWidth, dash: [10 / activeScale, 7 / activeScale], listening: false }));
+    if (yMatch) layer.add(new Konva.Line({ name: "snap-guide", points: [0, yMatch.guide, canvas.width, yMatch.guide], stroke: "#111111", strokeWidth, dash: [10 / activeScale, 7 / activeScale], listening: false }));
     transformerRef.current?.moveToTop();
     layer.batchDraw();
   }
@@ -432,8 +432,8 @@ function Editor({
       opacity: 1,
       visible: true,
       locked: false,
-      fill: "#19352e",
-      fontFamily: "Georgia",
+      fill: "#111111",
+      fontFamily: "Helvetica",
       fontSize: 68,
       fontStyle: "bold",
       align: "left",
@@ -462,7 +462,7 @@ function Editor({
       opacity: 1,
       visible: true,
       locked: false,
-      fill: "#e8af45",
+      fill: "#d9d9d9",
       cornerRadius: 28,
     };
     layerRef.current?.add(await designNodeToKonva(design, loadAsset));

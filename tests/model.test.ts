@@ -65,7 +65,7 @@ describe("ImageStitch project model", () => {
       revisions: [{ id: "legacy-revision", number: 1, createdAt: "2026-01-01T00:00:00.000Z", summary: "Created" }],
       currentRevisionId: "legacy-revision",
     });
-    expect(recovered?.canvas.background).toBe("#f8f0df");
+    expect(recovered?.canvas.background).toBe("#ffffff");
     expect(recovered?.revisions[0].snapshot.objects).toEqual([]);
   });
 

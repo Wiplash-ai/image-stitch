@@ -48,6 +48,21 @@ try {
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   await page.locator(".design-canvas canvas").waitFor();
+  const visualSystem = await page.evaluate(() => {
+    const style = (selector) => getComputedStyle(document.querySelector(selector));
+    return {
+      topbar: style(".topbar").backgroundColor,
+      toolrail: style(".toolrail").backgroundColor,
+      sidepanel: style(".sidepanel").backgroundColor,
+      stage: style(".canvas-stage").backgroundColor,
+      headingFont: style(".panel-heading h1").fontFamily,
+    };
+  });
+  assert(visualSystem.topbar === "rgb(255, 255, 255)", "The top bar should use the white editor shell");
+  assert(visualSystem.toolrail === "rgb(17, 17, 17)", "The tool rail should use black professional-editor chrome");
+  assert(visualSystem.sidepanel === "rgb(255, 255, 255)", "The asset panel should use the white editor shell");
+  assert(visualSystem.stage === "rgb(222, 222, 222)", "The artboard stage should use neutral gray");
+  assert(!visualSystem.headingFont.toLowerCase().includes("georgia"), "Interface headings should use sans-serif typography");
   await page.getByRole("button", { name: "Layers" }).click();
   assert(await page.locator(".layer-row").count() === 3, "Starter project should have three layers");
 
@@ -112,6 +127,11 @@ try {
 
   await mkdir("artifacts", { recursive: true });
   await page.screenshot({ path: "artifacts/editor-smoke.png", fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  assert(await page.locator(".canvas-stage").isVisible(), "The editor stage should remain visible at 1280 by 800");
+  assert(await page.locator(".inspector").isVisible(), "The inspector should remain visible at 1280 by 800");
+  await page.screenshot({ path: "artifacts/editor-smoke-1280.png", fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   await page.getByRole("button", { name: "Files", exact: true }).click();
   const projectDownload = page.waitForEvent("download");

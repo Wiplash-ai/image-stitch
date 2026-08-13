@@ -91,7 +91,7 @@ export interface ImageStitchProject {
   currentRevisionId: string;
 }
 
-const DEFAULT_BACKGROUND = "#f8f0df";
+const DEFAULT_BACKGROUND = "#ffffff";
 
 export const FULL_IMAGE_CROP: NormalizedCrop = { x: 0, y: 0, width: 1, height: 1 };
 export const DEFAULT_IMAGE_ADJUSTMENTS: ImageAdjustments = {
@@ -139,8 +139,8 @@ export function createStarterObjects(): DesignNode[] {
       opacity: 1,
       visible: true,
       locked: false,
-      fill: "#19352e",
-      fontFamily: "Georgia",
+      fill: "#111111",
+      fontFamily: "Helvetica",
       fontSize: 98,
       fontStyle: "bold",
       align: "left",
@@ -161,7 +161,7 @@ export function createStarterObjects(): DesignNode[] {
       opacity: 1,
       visible: true,
       locked: false,
-      fill: "#db5d3f",
+      fill: "#111111",
       cornerRadius: 9,
     },
     {
@@ -179,7 +179,7 @@ export function createStarterObjects(): DesignNode[] {
       opacity: 0.84,
       visible: true,
       locked: false,
-      fill: "#19352e",
+      fill: "#111111",
       fontFamily: "Arial",
       fontSize: 34,
       fontStyle: "normal",

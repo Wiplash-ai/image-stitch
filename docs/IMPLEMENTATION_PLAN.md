@@ -1,7 +1,7 @@
 # ImageStitch implementation plan
 
 **Status:** Accepted foundation
-**Version:** 0.2
+**Version:** 0.3
 **Updated:** 2026-08-13
 
 ## Product objective
@@ -28,7 +28,7 @@ undo, strong presets, and fast recovery over exposing graphics-engine jargon.
 Exit gate: a clean clone passes `npm run verify`, the unpacked extension opens,
 captures a visible tab, and loads that capture into its bundled editor.
 
-### Phase 1 — dependable everyday editor (in progress)
+### Phase 1 — dependable everyday editor (current milestone)
 
 - [x] IndexedDB project/asset stores and recent-project switching.
 - [x] Snapshot undo/redo history and autosave/recovery receipts.
@@ -49,6 +49,9 @@ captures a visible tab, and loads that capture into its bundled editor.
 
 Exit gate: the design partner completes ten representative Canva/PicMonkey jobs
 without data loss or needing developer assistance.
+
+The scoped milestone, success measures, dependencies, and sequencing are in
+[`NEXT_MILESTONE.md`](./NEXT_MILESTONE.md).
 
 ### Phase 2 — templates and repeatability
 

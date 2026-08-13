@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
   <title id="title">ImageStitch</title>
-  <rect width="128" height="128" rx="30" fill="#171712"/>
-  <path d="M27 34h48v48H27z" fill="#f4efe5" transform="rotate(-5 51 58)"/>
-  <path d="M53 45h48v48H53z" fill="#ff6b4a" transform="rotate(6 77 69)"/>
-  <path d="M43 39l38 53M35 58l51 7" stroke="#171712" stroke-width="5" stroke-linecap="round" stroke-dasharray="3 9"/>
+  <rect width="128" height="128" rx="26" fill="#111111"/>
+  <path d="M27 34h48v48H27z" fill="#ffffff" transform="rotate(-5 51 58)"/>
+  <path d="M53 45h48v48H53z" fill="#d9d9d9" transform="rotate(6 77 69)"/>
+  <path d="M43 39l38 53M35 58l51 7" stroke="#111111" stroke-width="5" stroke-linecap="round" stroke-dasharray="3 9"/>
 </svg>
