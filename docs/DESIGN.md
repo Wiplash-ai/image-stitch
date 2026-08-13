@@ -19,11 +19,11 @@ token palette.” Advanced capability appears progressively in the inspector.
 
 ## Visual system
 
-- **Ink:** `#171712` for structure, tools, and high-confidence actions.
-- **Paper:** `#f4efe5` for the workspace shell.
+- **Ink:** `#19352e` for structure, tools, and high-confidence actions.
+- **Paper:** `#f8f0df` for the workspace shell.
 - **Canvas:** `#fffdf8` or the project's chosen background.
-- **Coral thread:** `#ff6b4a` for capture, AI proposals, and active tools.
-- **Gold pin:** `#f5c451` for highlights and template annotations.
+- **Coral thread:** `#db5d3f` for capture, AI proposals, and active tools.
+- **Gold pin:** `#e8af45` for highlights and template annotations.
 - **Sage:** `#5f826c` for saved, local, and safe states.
 - **Blue:** `#4f6da8` for links and informational states.
 

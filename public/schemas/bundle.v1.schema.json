@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://imagestitch.dev/schemas/bundle.v1.schema.json",
+  "title": "ImageStitch portable project bundle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "exportedAt", "project", "assets"],
+  "properties": {
+    "schemaVersion": { "const": "imagestitch.bundle.v1" },
+    "exportedAt": { "type": "string", "format": "date-time" },
+    "project": { "$ref": "project.v1.schema.json" },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "projectId", "name", "mimeType", "size", "width", "height", "createdAt", "dataUrl"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "projectId": { "type": "string", "format": "uuid" },
+          "name": { "type": "string", "minLength": 1, "maxLength": 240 },
+          "mimeType": { "enum": ["image/png", "image/jpeg", "image/webp", "image/gif"] },
+          "size": { "type": "integer", "minimum": 0 },
+          "width": { "type": "integer", "minimum": 1, "maximum": 32768 },
+          "height": { "type": "integer", "minimum": 1, "maximum": 32768 },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "dataUrl": { "type": "string", "pattern": "^data:image/(png|jpeg|webp|gif);base64," }
+        }
+      }
+    }
+  }
+}

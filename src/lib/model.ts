@@ -1,18 +1,55 @@
 export type CanvasPreset = "square" | "portrait" | "story" | "landscape" | "custom";
 
-export interface CanvasSize {
+export interface CanvasSettings {
   preset: CanvasPreset;
   width: number;
   height: number;
+  background: string;
 }
 
-export interface StitchObject {
+export interface BaseDesignNode {
   id: string;
-  kind: "image" | "text" | "shape";
   name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+  opacity: number;
+  visible: boolean;
   locked: boolean;
-  hidden: boolean;
-  node: Record<string, unknown>;
+}
+
+export interface TextDesignNode extends BaseDesignNode {
+  kind: "text";
+  text: string;
+  fill: string;
+  fontFamily: string;
+  fontSize: number;
+  fontStyle: string;
+  align: "left" | "center" | "right";
+  lineHeight: number;
+}
+
+export interface ShapeDesignNode extends BaseDesignNode {
+  kind: "shape";
+  shape: "rect" | "ellipse";
+  fill: string;
+  cornerRadius: number;
+}
+
+export interface ImageDesignNode extends BaseDesignNode {
+  kind: "image";
+  assetId: string;
+}
+
+export type DesignNode = TextDesignNode | ShapeDesignNode | ImageDesignNode;
+
+export interface ProjectSnapshot {
+  canvas: CanvasSettings;
+  objects: DesignNode[];
 }
 
 export interface Revision {
@@ -20,6 +57,7 @@ export interface Revision {
   number: number;
   createdAt: string;
   summary: string;
+  snapshot: ProjectSnapshot;
 }
 
 export interface ImageStitchProject {
@@ -29,58 +67,330 @@ export interface ImageStitchProject {
   residency: "local";
   createdAt: string;
   updatedAt: string;
-  canvas: CanvasSize;
-  objects: StitchObject[];
+  canvas: CanvasSettings;
+  objects: DesignNode[];
   revisions: Revision[];
   currentRevisionId: string;
 }
 
-export const CANVAS_PRESETS: Record<Exclude<CanvasPreset, "custom">, CanvasSize> = {
-  square: { preset: "square", width: 1080, height: 1080 },
-  portrait: { preset: "portrait", width: 1080, height: 1350 },
-  story: { preset: "story", width: 1080, height: 1920 },
-  landscape: { preset: "landscape", width: 1200, height: 628 },
+const DEFAULT_BACKGROUND = "#f8f0df";
+
+export const CANVAS_PRESETS: Record<Exclude<CanvasPreset, "custom">, CanvasSettings> = {
+  square: { preset: "square", width: 1080, height: 1080, background: DEFAULT_BACKGROUND },
+  portrait: { preset: "portrait", width: 1080, height: 1350, background: DEFAULT_BACKGROUND },
+  story: { preset: "story", width: 1080, height: 1920, background: DEFAULT_BACKGROUND },
+  landscape: { preset: "landscape", width: 1200, height: 628, background: DEFAULT_BACKGROUND },
 };
 
 const now = () => new Date().toISOString();
-const id = () => crypto.randomUUID();
+export const newId = () => crypto.randomUUID();
 
-export function createProject(name = "Untitled stitch"): ImageStitchProject {
+function cloneSnapshot(snapshot: ProjectSnapshot): ProjectSnapshot {
+  return {
+    canvas: { ...snapshot.canvas },
+    objects: snapshot.objects.map((object) => ({ ...object })),
+  };
+}
+
+export function createStarterObjects(): DesignNode[] {
+  return [
+    {
+      id: newId(),
+      kind: "text",
+      name: "Headline",
+      text: "Make something\nworth keeping.",
+      x: 120,
+      y: 125,
+      width: 840,
+      height: 235,
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+      opacity: 1,
+      visible: true,
+      locked: false,
+      fill: "#19352e",
+      fontFamily: "Georgia",
+      fontSize: 98,
+      fontStyle: "bold",
+      align: "left",
+      lineHeight: 0.98,
+    },
+    {
+      id: newId(),
+      kind: "shape",
+      name: "Accent",
+      shape: "rect",
+      x: 125,
+      y: 550,
+      width: 190,
+      height: 18,
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+      opacity: 1,
+      visible: true,
+      locked: false,
+      fill: "#db5d3f",
+      cornerRadius: 9,
+    },
+    {
+      id: newId(),
+      kind: "text",
+      name: "Caption",
+      text: "Your ideas stay on this device until you choose otherwise.",
+      x: 125,
+      y: 625,
+      width: 670,
+      height: 120,
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+      opacity: 0.84,
+      visible: true,
+      locked: false,
+      fill: "#19352e",
+      fontFamily: "Arial",
+      fontSize: 34,
+      fontStyle: "normal",
+      align: "left",
+      lineHeight: 1.25,
+    },
+  ];
+}
+
+export function createProject(name = "Untitled stitch", starter = true): ImageStitchProject {
   const createdAt = now();
-  const revisionId = id();
+  const revisionId = newId();
+  const snapshot: ProjectSnapshot = {
+    canvas: { ...CANVAS_PRESETS.square },
+    objects: starter ? createStarterObjects() : [],
+  };
   return {
     schemaVersion: "imagestitch.project.v1",
-    id: id(),
+    id: newId(),
     name,
     residency: "local",
     createdAt,
     updatedAt: createdAt,
-    canvas: CANVAS_PRESETS.square,
-    objects: [],
-    revisions: [{ id: revisionId, number: 1, createdAt, summary: "Project created" }],
+    canvas: snapshot.canvas,
+    objects: snapshot.objects,
+    revisions: [
+      {
+        id: revisionId,
+        number: 1,
+        createdAt,
+        summary: "Project created",
+        snapshot: cloneSnapshot(snapshot),
+      },
+    ],
     currentRevisionId: revisionId,
   };
 }
 
-export function commitRevision(project: ImageStitchProject, summary: string): ImageStitchProject {
+export function projectSnapshot(project: ImageStitchProject): ProjectSnapshot {
+  return cloneSnapshot({ canvas: project.canvas, objects: project.objects });
+}
+
+export function currentRevisionIndex(project: ImageStitchProject): number {
+  const index = project.revisions.findIndex((revision) => revision.id === project.currentRevisionId);
+  return index === -1 ? project.revisions.length - 1 : index;
+}
+
+export function canUndo(project: ImageStitchProject): boolean {
+  return currentRevisionIndex(project) > 0;
+}
+
+export function canRedo(project: ImageStitchProject): boolean {
+  return currentRevisionIndex(project) < project.revisions.length - 1;
+}
+
+export function commitSnapshot(
+  project: ImageStitchProject,
+  summary: string,
+  snapshot: ProjectSnapshot,
+): ImageStitchProject {
   const createdAt = now();
+  const currentIndex = currentRevisionIndex(project);
+  const revisions = project.revisions.slice(0, currentIndex + 1);
   const revision: Revision = {
-    id: id(),
-    number: project.revisions.length + 1,
+    id: newId(),
+    number: (revisions.at(-1)?.number ?? 0) + 1,
     createdAt,
     summary,
+    snapshot: cloneSnapshot(snapshot),
   };
+  const next = cloneSnapshot(snapshot);
   return {
     ...project,
     updatedAt: createdAt,
-    revisions: [...project.revisions, revision],
+    canvas: next.canvas,
+    objects: next.objects,
+    revisions: [...revisions, revision].slice(-100),
     currentRevisionId: revision.id,
   };
+}
+
+function moveToRevision(project: ImageStitchProject, index: number): ImageStitchProject {
+  const revision = project.revisions[index];
+  if (!revision) return project;
+  const snapshot = cloneSnapshot(revision.snapshot);
+  return {
+    ...project,
+    updatedAt: now(),
+    canvas: snapshot.canvas,
+    objects: snapshot.objects,
+    currentRevisionId: revision.id,
+  };
+}
+
+export function undoProject(project: ImageStitchProject): ImageStitchProject {
+  return moveToRevision(project, currentRevisionIndex(project) - 1);
+}
+
+export function redoProject(project: ImageStitchProject): ImageStitchProject {
+  return moveToRevision(project, currentRevisionIndex(project) + 1);
 }
 
 export function setCanvasPreset(
   project: ImageStitchProject,
   preset: Exclude<CanvasPreset, "custom">,
 ): ImageStitchProject {
-  return commitRevision({ ...project, canvas: CANVAS_PRESETS[preset] }, `Canvas set to ${preset}`);
+  const canvas = { ...CANVAS_PRESETS[preset], background: project.canvas.background };
+  return commitSnapshot(project, `Canvas set to ${preset}`, { canvas, objects: project.objects });
+}
+
+function finiteNumber(value: unknown, minimum = -Infinity, maximum = Infinity): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= minimum && value <= maximum;
+}
+
+function normalizeDesignNode(value: unknown): DesignNode | null {
+  if (!value || typeof value !== "object") return null;
+  const node = value as Record<string, unknown>;
+  if (
+    typeof node.id !== "string" || !node.id ||
+    typeof node.name !== "string" || !node.name ||
+    !finiteNumber(node.x) || !finiteNumber(node.y) ||
+    !finiteNumber(node.width, 0) || !finiteNumber(node.height, 0) ||
+    !finiteNumber(node.rotation) || !finiteNumber(node.scaleX) || !finiteNumber(node.scaleY) ||
+    !finiteNumber(node.opacity, 0, 1) || typeof node.visible !== "boolean" || typeof node.locked !== "boolean"
+  ) return null;
+  const common: BaseDesignNode = {
+    id: node.id,
+    name: node.name,
+    x: node.x,
+    y: node.y,
+    width: node.width,
+    height: node.height,
+    rotation: node.rotation,
+    scaleX: node.scaleX,
+    scaleY: node.scaleY,
+    opacity: node.opacity,
+    visible: node.visible,
+    locked: node.locked,
+  };
+  if (node.kind === "text") {
+    if (
+      typeof node.text !== "string" || typeof node.fill !== "string" || !node.fill ||
+      typeof node.fontFamily !== "string" || !node.fontFamily ||
+      !finiteNumber(node.fontSize, Number.EPSILON) || typeof node.fontStyle !== "string" || !node.fontStyle ||
+      !["left", "center", "right"].includes(String(node.align)) || !finiteNumber(node.lineHeight, Number.EPSILON)
+    ) return null;
+    return { ...common, kind: "text", text: node.text, fill: node.fill, fontFamily: node.fontFamily, fontSize: node.fontSize, fontStyle: node.fontStyle, align: node.align as TextDesignNode["align"], lineHeight: node.lineHeight };
+  }
+  if (node.kind === "shape") {
+    if (! ["rect", "ellipse"].includes(String(node.shape)) || typeof node.fill !== "string" || !node.fill || !finiteNumber(node.cornerRadius, 0)) return null;
+    return { ...common, kind: "shape", shape: node.shape as ShapeDesignNode["shape"], fill: node.fill, cornerRadius: node.cornerRadius };
+  }
+  if (node.kind === "image") {
+    if (typeof node.assetId !== "string" || !node.assetId) return null;
+    return { ...common, kind: "image", assetId: node.assetId };
+  }
+  return null;
+}
+
+function normalizeObjects(value: unknown): DesignNode[] | null {
+  if (!Array.isArray(value)) return null;
+  const objects = value.map(normalizeDesignNode);
+  return objects.some((object) => !object) ? null : objects as DesignNode[];
+}
+
+function normalizeCanvas(value: unknown): CanvasSettings | null {
+  if (!value || typeof value !== "object") return null;
+  const canvas = value as Partial<CanvasSettings>;
+  if (
+    !["square", "portrait", "story", "landscape", "custom"].includes(String(canvas.preset)) ||
+    !finiteNumber(canvas.width, 1, 16384) || !Number.isInteger(canvas.width) ||
+    !finiteNumber(canvas.height, 1, 16384) || !Number.isInteger(canvas.height)
+  ) return null;
+  return {
+    preset: canvas.preset!,
+    width: canvas.width,
+    height: canvas.height,
+    background: typeof canvas.background === "string" && canvas.background ? canvas.background : DEFAULT_BACKGROUND,
+  };
+}
+
+export function normalizeProject(value: unknown): ImageStitchProject | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<ImageStitchProject> & {
+    canvas?: Partial<CanvasSettings>;
+    objects?: Array<Record<string, unknown>>;
+    revisions?: Array<Partial<Revision>>;
+  };
+  if (candidate.schemaVersion !== "imagestitch.project.v1" || !candidate.id || !candidate.name) {
+    return null;
+  }
+
+  const fallbackCanvas = normalizeCanvas(candidate.canvas);
+  const objects = normalizeObjects(candidate.objects);
+  if (!fallbackCanvas || !objects) return null;
+  const fallbackSnapshot = cloneSnapshot({ canvas: fallbackCanvas, objects });
+  let revisions: Revision[];
+  if (Array.isArray(candidate.revisions) && candidate.revisions.length) {
+    const normalized = candidate.revisions.map((revision, index): Revision | null => {
+      let snapshot = fallbackSnapshot;
+      if (revision.snapshot) {
+        const canvas = normalizeCanvas(revision.snapshot.canvas);
+        const revisionObjects = normalizeObjects(revision.snapshot.objects);
+        if (!canvas || !revisionObjects) return null;
+        snapshot = { canvas, objects: revisionObjects };
+      }
+      return {
+        id: revision.id ?? newId(),
+        number: revision.number ?? index + 1,
+        createdAt: revision.createdAt ?? candidate.updatedAt ?? now(),
+        summary: revision.summary ?? "Recovered revision",
+        snapshot: cloneSnapshot(snapshot),
+      };
+    });
+    if (normalized.some((revision) => !revision)) return null;
+    revisions = normalized as Revision[];
+  } else {
+    revisions = [
+        {
+          id: newId(),
+          number: 1,
+          createdAt: candidate.createdAt ?? now(),
+          summary: "Recovered project",
+          snapshot: cloneSnapshot(fallbackSnapshot),
+        },
+      ];
+  }
+  const currentRevisionId = revisions.some((revision) => revision.id === candidate.currentRevisionId)
+    ? candidate.currentRevisionId!
+    : revisions.at(-1)!.id;
+
+  return {
+    schemaVersion: "imagestitch.project.v1",
+    id: candidate.id,
+    name: candidate.name,
+    residency: "local",
+    createdAt: candidate.createdAt ?? now(),
+    updatedAt: candidate.updatedAt ?? now(),
+    canvas: fallbackCanvas,
+    objects,
+    revisions,
+    currentRevisionId,
+  };
 }

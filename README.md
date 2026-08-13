@@ -11,14 +11,16 @@ an upload, or an AI connection.
 
 ## Current status
 
-Pre-alpha foundation with a working first slice:
+Pre-alpha with a dependable local editing slice:
 
 - Konva canvas with selectable, movable, resizable text, shapes, and images.
-- Upload and browser-extension capture import.
+- Upload, paste, drag/drop, and browser-extension capture import.
 - Square, portrait, story, and landscape presets.
-- Quick object colors and 2x PNG export.
-- Local project metadata and revision persistence.
-- Public project and AI edit-plan schemas.
+- Layer reorder, rename, duplicate, lock, hide, delete, and object inspector.
+- Snapshot undo/redo, keyboard nudging/shortcuts, and visible autosave receipts.
+- IndexedDB projects and original image blobs with reload recovery.
+- Full-size PNG, JPEG, and WebP exports plus portable project import/export.
+- Public project, portable bundle, and AI edit-plan schemas.
 - Manifest V3 extension with visible-page capture and a packaged copy of the
   same local editor.
 
@@ -41,7 +43,8 @@ npm install
 npm run dev
 ```
 
-Verify the app and package the extension:
+Verify the model, schemas, storage, browser interactions, exports, and packaged
+extension:
 
 ```bash
 npm run verify

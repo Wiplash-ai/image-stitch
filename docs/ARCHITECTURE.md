@@ -19,7 +19,7 @@ flowchart LR
   Upload[Local files and clipboard] --> Editor
   Extension --> Editor[Shared ImageStitch editor]
   Editor --> ProjectStore[(IndexedDB projects)]
-  Editor --> AssetStore[(IndexedDB or OPFS assets)]
+  Editor --> AssetStore[(IndexedDB image blobs)]
   Editor --> Exporter[Browser export pipeline]
   ChatGPT[ChatGPT or Codex] -->|MCP tool calls| MCP[Public MCP adapter]
   MCP -->|validated edit plan| Editor
@@ -64,7 +64,9 @@ and every plan binds to an immutable base revision.
 
 ## Public contracts
 
-- `imagestitch.project.v1`: portable project metadata and serialized objects.
+- `imagestitch.project.v1`: engine-independent project state, objects, and
+  bounded revision snapshots.
+- `imagestitch.bundle.v1`: portable project plus base64-encoded local assets.
 - `imagestitch.edit-plan.v1`: rationale-bearing proposed object operations.
 - `imagestitch.export-receipt.v1`: source revision, dimensions, MIME type,
   byte size, hash, warnings, and approval time.
@@ -99,7 +101,8 @@ and every plan binds to an immutable base revision.
 ### ADR-003: local-first modular client
 
 - **Status:** Accepted.
-- **Decision:** Projects and assets live in IndexedDB/OPFS by default. No account
+- **Decision:** Projects and assets live in IndexedDB by default, with OPFS kept
+  as a future large-asset migration. No account
   or backend is required for normal editing and compatible export.
 - **Consequences:** Device loss is possible until users export a project or opt
   into sync. Recovery, quota handling, and portable backups are release gates.

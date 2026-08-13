@@ -1,19 +1,196 @@
-import type { ImageStitchProject } from "./model";
+import { createProject, normalizeProject, type ImageStitchProject } from "./model";
 
-const PROJECT_KEY = "imagestitch.project.v1";
+const DATABASE_NAME = "imagestitch";
+const DATABASE_VERSION = 1;
+const PROJECT_STORE = "projects";
+const ASSET_STORE = "assets";
+const SETTING_STORE = "settings";
+const ACTIVE_PROJECT_KEY = "activeProjectId";
+const LEGACY_PROJECT_KEY = "imagestitch.project.v1";
 const CAPTURE_KEY = "imagestitch.pendingCapture.v1";
 
-export function loadProject(): ImageStitchProject | null {
+export interface StoredAsset {
+  id: string;
+  projectId: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  width: number;
+  height: number;
+  createdAt: string;
+  blob: Blob;
+}
+
+interface StoredSetting {
+  key: string;
+  value: string;
+}
+
+let databasePromise: Promise<IDBDatabase> | null = null;
+
+function requestResult<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("IndexedDB request failed"));
+  });
+}
+
+function transactionComplete(transaction: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error("IndexedDB transaction failed"));
+    transaction.onabort = () => reject(transaction.error ?? new Error("IndexedDB transaction aborted"));
+  });
+}
+
+function openDatabase(): Promise<IDBDatabase> {
+  if (databasePromise) return databasePromise;
+  databasePromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(PROJECT_STORE)) {
+        database.createObjectStore(PROJECT_STORE, { keyPath: "id" });
+      }
+      if (!database.objectStoreNames.contains(ASSET_STORE)) {
+        const assets = database.createObjectStore(ASSET_STORE, { keyPath: "id" });
+        assets.createIndex("projectId", "projectId", { unique: false });
+      }
+      if (!database.objectStoreNames.contains(SETTING_STORE)) {
+        database.createObjectStore(SETTING_STORE, { keyPath: "key" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => {
+      databasePromise = null;
+      reject(request.error ?? new Error("Unable to open the ImageStitch database"));
+    };
+  });
+  return databasePromise;
+}
+
+export async function saveProject(project: ImageStitchProject): Promise<void> {
+  const database = await openDatabase();
+  const transaction = database.transaction([PROJECT_STORE, SETTING_STORE], "readwrite");
+  transaction.objectStore(PROJECT_STORE).put(project);
+  transaction.objectStore(SETTING_STORE).put({ key: ACTIVE_PROJECT_KEY, value: project.id } satisfies StoredSetting);
+  await transactionComplete(transaction);
+}
+
+export async function loadProject(projectId: string): Promise<ImageStitchProject | null> {
+  const database = await openDatabase();
+  const transaction = database.transaction(PROJECT_STORE, "readonly");
+  const value = await requestResult(transaction.objectStore(PROJECT_STORE).get(projectId));
+  return normalizeProject(value);
+}
+
+export async function listProjects(): Promise<ImageStitchProject[]> {
+  const database = await openDatabase();
+  const transaction = database.transaction(PROJECT_STORE, "readonly");
+  const values = await requestResult(transaction.objectStore(PROJECT_STORE).getAll());
+  return values
+    .map(normalizeProject)
+    .filter((project): project is ImageStitchProject => Boolean(project))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+async function loadActiveProjectId(): Promise<string | null> {
+  const database = await openDatabase();
+  const transaction = database.transaction(SETTING_STORE, "readonly");
+  const setting = (await requestResult(
+    transaction.objectStore(SETTING_STORE).get(ACTIVE_PROJECT_KEY),
+  )) as StoredSetting | undefined;
+  return setting?.value ?? null;
+}
+
+function loadLegacyProject(): ImageStitchProject | null {
   try {
-    const value = localStorage.getItem(PROJECT_KEY);
-    return value ? (JSON.parse(value) as ImageStitchProject) : null;
+    const raw = globalThis.localStorage?.getItem(LEGACY_PROJECT_KEY);
+    return raw ? normalizeProject(JSON.parse(raw)) : null;
   } catch {
     return null;
   }
 }
 
-export function saveProject(project: ImageStitchProject) {
-  localStorage.setItem(PROJECT_KEY, JSON.stringify(project));
+export async function bootstrapProject(): Promise<ImageStitchProject> {
+  const activeProjectId = await loadActiveProjectId();
+  if (activeProjectId) {
+    const activeProject = await loadProject(activeProjectId);
+    if (activeProject) return activeProject;
+  }
+
+  const projects = await listProjects();
+  if (projects[0]) {
+    await saveProject(projects[0]);
+    return projects[0];
+  }
+
+  const project = loadLegacyProject() ?? createProject();
+  await saveProject(project);
+  try {
+    globalThis.localStorage?.removeItem(LEGACY_PROJECT_KEY);
+  } catch {
+    // Private browsing can expose localStorage while still rejecting writes.
+  }
+  return project;
+}
+
+export async function deleteProject(projectId: string): Promise<void> {
+  const database = await openDatabase();
+  const transaction = database.transaction([PROJECT_STORE, ASSET_STORE], "readwrite");
+  transaction.objectStore(PROJECT_STORE).delete(projectId);
+  const index = transaction.objectStore(ASSET_STORE).index("projectId");
+  const keys = await requestResult(index.getAllKeys(projectId));
+  for (const key of keys) transaction.objectStore(ASSET_STORE).delete(key);
+  await transactionComplete(transaction);
+}
+
+export async function saveAsset(asset: StoredAsset): Promise<void> {
+  const database = await openDatabase();
+  const transaction = database.transaction(ASSET_STORE, "readwrite");
+  transaction.objectStore(ASSET_STORE).put(asset);
+  await transactionComplete(transaction);
+}
+
+export async function loadAsset(assetId: string): Promise<StoredAsset | null> {
+  const database = await openDatabase();
+  const transaction = database.transaction(ASSET_STORE, "readonly");
+  const asset = await requestResult(transaction.objectStore(ASSET_STORE).get(assetId));
+  return (asset as StoredAsset | undefined) ?? null;
+}
+
+export async function listAssets(projectId: string): Promise<StoredAsset[]> {
+  const database = await openDatabase();
+  const transaction = database.transaction(ASSET_STORE, "readonly");
+  const assets = await requestResult(transaction.objectStore(ASSET_STORE).index("projectId").getAll(projectId));
+  return assets as StoredAsset[];
+}
+
+export async function createStoredAsset(projectId: string, file: Blob & { name?: string }): Promise<StoredAsset> {
+  const dimensions = await getImageDimensions(file);
+  return {
+    id: crypto.randomUUID(),
+    projectId,
+    name: file.name ?? "Pasted image",
+    mimeType: file.type || "image/png",
+    size: file.size,
+    width: dimensions.width,
+    height: dimensions.height,
+    createdAt: new Date().toISOString(),
+    blob: file,
+  };
+}
+
+export async function getImageDimensions(blob: Blob): Promise<{ width: number; height: number }> {
+  const bitmap = await createImageBitmap(blob);
+  const dimensions = { width: bitmap.width, height: bitmap.height };
+  bitmap.close();
+  return dimensions;
+}
+
+export async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  const response = await fetch(dataUrl);
+  return response.blob();
 }
 
 export async function consumeExtensionCapture(): Promise<string | null> {
@@ -23,4 +200,16 @@ export async function consumeExtensionCapture(): Promise<string | null> {
   if (!capture?.dataUrl) return null;
   await chrome.storage.local.remove(CAPTURE_KEY);
   return capture.dataUrl;
+}
+
+export async function resetStorageForTests(): Promise<void> {
+  const database = await databasePromise?.catch(() => null);
+  database?.close();
+  databasePromise = null;
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(DATABASE_NAME);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error ?? new Error("Unable to reset database"));
+    request.onblocked = () => reject(new Error("Database reset was blocked"));
+  });
 }

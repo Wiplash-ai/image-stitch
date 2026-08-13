@@ -1,13 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { createProject, setCanvasPreset } from "../src/lib/model";
+import {
+  canRedo,
+  canUndo,
+  commitSnapshot,
+  createProject,
+  normalizeProject,
+  redoProject,
+  setCanvasPreset,
+  undoProject,
+} from "../src/lib/model";
 
 describe("ImageStitch project model", () => {
-  it("creates a local square project with a first revision", () => {
+  it("creates a local square project with serializable starter layers", () => {
     const project = createProject("Birthday card");
     expect(project.schemaVersion).toBe("imagestitch.project.v1");
     expect(project.residency).toBe("local");
     expect(project.canvas).toMatchObject({ preset: "square", width: 1080, height: 1080 });
+    expect(project.objects.map((object) => object.kind)).toEqual(["text", "shape", "text"]);
     expect(project.revisions).toHaveLength(1);
+    expect(project.revisions[0].snapshot.objects).toEqual(project.objects);
   });
 
   it("commits a revision when the canvas preset changes", () => {
@@ -15,5 +26,46 @@ describe("ImageStitch project model", () => {
     expect(project.canvas).toMatchObject({ preset: "story", width: 1080, height: 1920 });
     expect(project.revisions).toHaveLength(2);
     expect(project.currentRevisionId).toBe(project.revisions[1].id);
+    expect(canUndo(project)).toBe(true);
+  });
+
+  it("undoes and redoes complete canvas snapshots", () => {
+    const first = createProject("Undo test", false);
+    const second = commitSnapshot(first, "Background changed", {
+      canvas: { ...first.canvas, background: "#123456" },
+      objects: first.objects,
+    });
+    const undone = undoProject(second);
+    expect(undone.canvas.background).toBe(first.canvas.background);
+    expect(canRedo(undone)).toBe(true);
+    expect(redoProject(undone).canvas.background).toBe("#123456");
+  });
+
+  it("drops the redo branch when a new edit follows undo", () => {
+    const first = createProject("Branch test", false);
+    const second = setCanvasPreset(first, "portrait");
+    const third = setCanvasPreset(second, "story");
+    const undone = undoProject(third);
+    const branched = setCanvasPreset(undone, "landscape");
+    expect(branched.revisions).toHaveLength(3);
+    expect(branched.canvas.preset).toBe("landscape");
+    expect(canRedo(branched)).toBe(false);
+  });
+
+  it("recovers the original localStorage-era project shape", () => {
+    const recovered = normalizeProject({
+      schemaVersion: "imagestitch.project.v1",
+      id: "legacy-project",
+      name: "Legacy",
+      residency: "local",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      canvas: { preset: "square", width: 1080, height: 1080 },
+      objects: [],
+      revisions: [{ id: "legacy-revision", number: 1, createdAt: "2026-01-01T00:00:00.000Z", summary: "Created" }],
+      currentRevisionId: "legacy-revision",
+    });
+    expect(recovered?.canvas.background).toBe("#f8f0df");
+    expect(recovered?.revisions[0].snapshot.objects).toEqual([]);
   });
 });
