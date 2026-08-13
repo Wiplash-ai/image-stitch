@@ -5,6 +5,7 @@
   "description": "Capture images and pages into a private, local-first creative workbench.",
   "homepage_url": "https://labs.wiplash.ai/image-stitch",
   "permissions": ["activeTab", "contextMenus", "storage", "tabs"],
+  "host_permissions": ["https://api.openverse.org/*"],
   "background": { "service_worker": "background.js" },
   "action": {
     "default_title": "Capture with ImageStitch",

@@ -8,6 +8,7 @@ import {
   redoProject,
   setCanvasPreset,
   undoProject,
+  SHAPE_KINDS,
 } from "../src/lib/model";
 
 describe("ImageStitch project model", () => {
@@ -86,5 +87,17 @@ describe("ImageStitch project model", () => {
       crop: { x: 0, y: 0, width: 1, height: 1 },
       adjustments: { brightness: 0, contrast: 0, saturation: 0, blur: 0, grayscale: false, sepia: false },
     });
+  });
+
+  it("normalizes every shape in the starter element library", () => {
+    for (const shape of SHAPE_KINDS) {
+      const project = createProject(`Shape ${shape}`);
+      const shapeNode = project.objects.find((object) => object.kind === "shape")!;
+      const candidate = {
+        ...project,
+        objects: project.objects.map((object) => object.id === shapeNode.id ? { ...object, shape } : object),
+      };
+      expect(normalizeProject(candidate)?.objects.find((object) => object.kind === "shape")).toMatchObject({ shape });
+    }
   });
 });

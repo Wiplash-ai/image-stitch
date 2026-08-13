@@ -17,6 +17,7 @@ for synchronization, model connections, or workloads browsers cannot perform.
 flowchart LR
   Browser[Browser page] -->|capture or image| Extension[MV3 extension]
   Upload[Local files and clipboard] --> Editor
+  Openverse[Openverse API] -->|search results and image bytes| Editor
   Extension --> Editor[Shared ImageStitch editor]
   Editor --> ProjectStore[(IndexedDB projects)]
   Editor --> AssetStore[(IndexedDB image blobs)]
@@ -35,7 +36,8 @@ flowchart LR
 | --- | --- | --- | --- |
 | Project core | Manifest, migrations, commands, revisions | Project records | Typed commands and schemas |
 | Canvas adapter | Konva node lifecycle and serialization | No durable data | Render and selection adapter |
-| Asset repository | Import, hashes, blobs, thumbnails, relinking | Local asset bytes | Asset references |
+| Asset repository | Import, blobs, source receipts, thumbnails, relinking | Local asset bytes and attribution | Asset references |
+| Image search adapter | Search and download reusable Openverse media | No durable data | Normalized image candidates |
 | Export pipeline | PNG/JPEG/WebP/SVG/PDF generation and QA | Export receipts | Export jobs |
 | Extension shell | Capture, page integration, clipboard handoff | Pending captures | Chrome messages |
 | AI plan review | Validation, diff, selective acceptance | Edit plans | Plan review commands |
@@ -149,6 +151,26 @@ and every plan binds to an immutable base revision.
   sync remains off by default, and extension identity needs a future device-link
   flow rather than broad host permissions.
 
+### ADR-007: Openverse adapter for openly licensed image search
+
+- **Status:** Accepted.
+- **Context:** The Images tool needs useful web search without embedding a
+  commercial stock-provider key or pretending arbitrary web images are safe to
+  reuse.
+- **Decision:** Use the anonymous Openverse API through a typed client adapter.
+  Initial results are limited to PDM, CC0, and CC BY entries with mature results
+  disabled. Download through Openverse's CORS-enabled image endpoint, save the
+  resulting bytes locally, and persist provider, creator, source URL, license,
+  and attribution alongside the asset. The MV3 package requests access only to
+  `https://api.openverse.org/*`.
+- **Consequences:** Search remains optional and normal editing stays local.
+  Openverse rate limits and availability affect search, not saved projects.
+  Catalog license information can be inaccurate, so the interface preserves a
+  source link and asks users to verify the license before publishing.
+- **Alternatives:** Arbitrary search-engine scraping was rejected because it
+  lacks a dependable reuse-rights contract. Commercial stock APIs were deferred
+  because they add credentials, provider terms, and account coupling.
+
 ## Risks and mitigations
 
 | Risk | Impact | Mitigation |
@@ -160,3 +182,4 @@ and every plan binds to an immutable base revision.
 | AI edits corrupt designs | High | Base-revision binding, schema validation, preview, selective apply, undo |
 | API key exposure | Critical | Never store in client code; encrypted vault, opaque IDs, revocation |
 | Template/font/asset licensing errors | High | Machine-readable attribution inventory and release audit |
+| Search catalog has stale or inaccurate license data | High | Restrictive default filters, durable source receipt, visible verification link |

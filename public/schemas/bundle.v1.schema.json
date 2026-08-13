@@ -24,6 +24,20 @@
           "width": { "type": "integer", "minimum": 1, "maximum": 32768 },
           "height": { "type": "integer", "minimum": 1, "maximum": 32768 },
           "createdAt": { "type": "string", "format": "date-time" },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["provider", "sourceUrl", "license", "attribution"],
+            "properties": {
+              "provider": { "const": "openverse" },
+              "sourceUrl": { "type": "string", "format": "uri" },
+              "creator": { "type": "string", "maxLength": 500 },
+              "creatorUrl": { "type": "string", "format": "uri" },
+              "license": { "type": "string", "minLength": 1, "maxLength": 80 },
+              "licenseUrl": { "type": "string", "format": "uri" },
+              "attribution": { "type": "string", "minLength": 1, "maxLength": 2000 }
+            }
+          },
           "dataUrl": { "type": "string", "pattern": "^data:image/(png|jpeg|webp|gif);base64," }
         }
       }

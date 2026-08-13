@@ -14,7 +14,16 @@ an upload, or an AI connection.
 Pre-alpha with a dependable local editing slice:
 
 - Konva canvas with selectable, movable, resizable text, shapes, and images.
-- Upload, paste, drag/drop, and browser-extension capture import.
+- Separate Text, Shapes, Images, and Canvas panels built around their actual
+  tasks rather than one generic starter panel.
+- Twelve editable shape primitives and heading, subheading, and body-text
+  presets.
+- Unrestricted color-wheel and hex controls with shortcut palettes for
+  artboards, text, and shape fills.
+- Local upload, paste, drag/drop, browser-extension capture, and openly
+  licensed image search through Openverse.
+- Durable creator, source, license, and attribution receipts for searched image
+  assets, included in portable project bundles.
 - Square, portrait, story, and landscape presets.
 - Layer reorder, rename, duplicate, lock, hide, delete, and object inspector.
 - Snapshot undo/redo, keyboard nudging/shortcuts, and visible autosave receipts.
@@ -68,6 +77,7 @@ The unpacked extension is generated at
 - [Product and interaction design](docs/DESIGN.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Account and AI connection contract](docs/ACCOUNT_AND_AI_CONNECTIONS.md)
+- [Open image search and attribution](docs/IMAGE_SEARCH.md)
 - [Open-source foundation](docs/OPEN_SOURCE_FOUNDATION.md)
 
 ## License

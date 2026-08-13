@@ -39,12 +39,14 @@ captures a visible tab, and loads that capture into its bundled editor.
 - [ ] Rulers and configurable snapping.
 - [x] Typeface, size, weight, italic, alignment, line-height, rectangle, and
   ellipse controls.
-- [ ] Local font upload, lines, borders, and shadows.
+- [x] Twelve-shape starter library including polygons, callouts, lines, and arrows.
+- [ ] Local font upload, borders, and shadows.
 - [x] Non-destructive centered crop presets, opacity, brightness, contrast,
   saturation, blur, grayscale, sepia, and named photo looks.
 - [ ] Interactive crop handles, rotate/flip, blend modes, temperature, tint,
   sharpen, and vignette.
 - [x] PNG, JPEG, WebP, and portable project bundle export/import.
+- [x] Openverse image search with local import and durable attribution receipts.
 - [ ] SVG and print-ready PDF export.
 
 Exit gate: the design partner completes ten representative Canva/PicMonkey jobs

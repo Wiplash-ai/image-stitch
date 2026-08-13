@@ -9,6 +9,16 @@ const ACTIVE_PROJECT_KEY = "activeProjectId";
 const LEGACY_PROJECT_KEY = "imagestitch.project.v1";
 const CAPTURE_KEY = "imagestitch.pendingCapture.v1";
 
+export interface AssetSource {
+  provider: "openverse";
+  sourceUrl: string;
+  creator?: string;
+  creatorUrl?: string;
+  license: string;
+  licenseUrl?: string;
+  attribution: string;
+}
+
 export interface StoredAsset {
   id: string;
   projectId: string;
@@ -18,6 +28,7 @@ export interface StoredAsset {
   width: number;
   height: number;
   createdAt: string;
+  source?: AssetSource;
   blob: Blob;
 }
 
@@ -166,7 +177,11 @@ export async function listAssets(projectId: string): Promise<StoredAsset[]> {
   return assets as StoredAsset[];
 }
 
-export async function createStoredAsset(projectId: string, file: Blob & { name?: string }): Promise<StoredAsset> {
+export async function createStoredAsset(
+  projectId: string,
+  file: Blob & { name?: string },
+  source?: AssetSource,
+): Promise<StoredAsset> {
   const dimensions = await getImageDimensions(file);
   return {
     id: crypto.randomUUID(),
@@ -177,6 +192,7 @@ export async function createStoredAsset(projectId: string, file: Blob & { name?:
     width: dimensions.width,
     height: dimensions.height,
     createdAt: new Date().toISOString(),
+    source,
     blob: file,
   };
 }

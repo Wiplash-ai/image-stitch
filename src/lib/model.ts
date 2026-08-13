@@ -33,9 +33,26 @@ export interface TextDesignNode extends BaseDesignNode {
   lineHeight: number;
 }
 
+export const SHAPE_KINDS = [
+  "rect",
+  "rounded-rect",
+  "ellipse",
+  "triangle",
+  "diamond",
+  "pentagon",
+  "hexagon",
+  "star",
+  "heart",
+  "speech-bubble",
+  "line",
+  "arrow",
+] as const;
+
+export type ShapeKind = (typeof SHAPE_KINDS)[number];
+
 export interface ShapeDesignNode extends BaseDesignNode {
   kind: "shape";
-  shape: "rect" | "ellipse";
+  shape: ShapeKind;
   fill: string;
   cornerRadius: number;
 }
@@ -329,7 +346,7 @@ function normalizeDesignNode(value: unknown): DesignNode | null {
     return { ...common, kind: "text", text: node.text, fill: node.fill, fontFamily: node.fontFamily, fontSize: node.fontSize, fontStyle: node.fontStyle, align: node.align as TextDesignNode["align"], lineHeight: node.lineHeight };
   }
   if (node.kind === "shape") {
-    if (! ["rect", "ellipse"].includes(String(node.shape)) || typeof node.fill !== "string" || !node.fill || !finiteNumber(node.cornerRadius, 0)) return null;
+    if (!SHAPE_KINDS.includes(node.shape as ShapeKind) || typeof node.fill !== "string" || !node.fill || !finiteNumber(node.cornerRadius, 0)) return null;
     return { ...common, kind: "shape", shape: node.shape as ShapeDesignNode["shape"], fill: node.fill, cornerRadius: node.cornerRadius };
   }
   if (node.kind === "image") {

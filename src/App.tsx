@@ -9,16 +9,21 @@ import {
   Download,
   Eye,
   EyeOff,
+  ExternalLink,
   FilePlus2,
   FolderOpen,
   ImagePlus,
   Italic,
   Layers3,
   Lock,
+  LoaderCircle,
   MousePointer2,
+  Palette,
+  Plus,
   Redo2,
   RotateCcw,
   Save,
+  Search,
   SendToBack,
   Shapes,
   Sparkles,
@@ -27,6 +32,7 @@ import {
   Undo2,
   Unlock,
   UserRound,
+  Upload,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -49,9 +55,11 @@ import {
   type ImageDesignNode,
   type ImageStitchProject,
   type NormalizedCrop,
+  type ShapeKind,
 } from "./lib/model";
 import {
   DESIGN_OBJECT_NAME,
+  applyDesignFill,
   applyImagePresentation,
   applyLockedState,
   designNodeToKonva,
@@ -68,16 +76,43 @@ import {
   loadProject,
   saveAsset,
   saveProject,
+  type AssetSource,
 } from "./lib/storage";
 import { buildProjectBundle, downloadTextFile, readProjectBundle, safeFilename } from "./lib/bundle";
 import { PHOTO_PRESETS, centerCropForAspect, fitDisplayBoxToAspect, type PhotoPreset } from "./lib/image-edits";
 import { AccountPanel } from "./components/AccountPanel";
 import { AiConnectionsPanel } from "./components/AiConnectionsPanel";
 import { useAccountConnections } from "./hooks/use-account-connections";
+import {
+  downloadOpenverseImage,
+  openverseAssetSource,
+  searchOpenverseImages,
+  type OpenverseImage,
+} from "./lib/openverse";
 
-const SWATCHES = ["#111111", "#ffffff", "#d9d9d9", "#ff5d42", "#3f7fff", "#35a36f"];
+const COLOR_SWATCHES = [
+  "#111111", "#ffffff", "#d9d9d9", "#8b8b8b", "#ff5d42", "#ffb000",
+  "#ffe14d", "#35a36f", "#24a8a8", "#3f7fff", "#7454d6", "#e6499a",
+];
 const MAX_STAGE_SIZE = 640;
 const FONT_FAMILIES = ["Georgia", "Arial", "Helvetica", "Trebuchet MS", "Courier New"];
+
+const SHAPE_OPTIONS: Array<{ kind: ShapeKind; label: string }> = [
+  { kind: "rect", label: "Rectangle" },
+  { kind: "rounded-rect", label: "Rounded" },
+  { kind: "ellipse", label: "Circle" },
+  { kind: "triangle", label: "Triangle" },
+  { kind: "diamond", label: "Diamond" },
+  { kind: "pentagon", label: "Pentagon" },
+  { kind: "hexagon", label: "Hexagon" },
+  { kind: "star", label: "Star" },
+  { kind: "heart", label: "Heart" },
+  { kind: "speech-bubble", label: "Speech" },
+  { kind: "line", label: "Line" },
+  { kind: "arrow", label: "Arrow" },
+];
+
+type TextPreset = "heading" | "subheading" | "body";
 
 type SaveState = "saving" | "saved" | "error";
 type ToolName = "Select" | "Images" | "Text" | "Shapes" | "Layers" | "Files" | "AI" | "Account";
@@ -131,12 +166,28 @@ function Editor({
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [recentProjects, setRecentProjects] = useState<ImageStitchProject[]>([]);
   const [zoom, setZoom] = useState(1);
+  const [selectedAssetSource, setSelectedAssetSource] = useState<AssetSource | null>(null);
   const accountConnections = useAccountConnections();
   const selectedObject = project.objects.find((object) => object.id === selectedId) ?? null;
+  const selectedAssetId = selectedObject?.kind === "image" ? selectedObject.assetId : null;
   const fitScale = Math.min(MAX_STAGE_SIZE / project.canvas.width, MAX_STAGE_SIZE / project.canvas.height);
   const viewScale = fitScale * zoom;
   const stageWidth = Math.round(project.canvas.width * viewScale);
   const stageHeight = Math.round(project.canvas.height * viewScale);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedAssetId) {
+      setSelectedAssetSource(null);
+      return;
+    }
+    void loadAsset(selectedAssetId).then((asset) => {
+      if (!cancelled) setSelectedAssetSource(asset?.source ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAssetId]);
 
   function setCurrentProject(next: ImageStitchProject) {
     projectRef.current = next;
@@ -367,13 +418,13 @@ function Editor({
     };
   }, []);
 
-  async function addImageBlob(file: Blob & { name?: string }) {
+  async function addImageBlob(file: Blob & { name?: string }, source?: AssetSource): Promise<boolean> {
     if (!file.type.startsWith("image/")) {
       setMessage("Choose an image file to add to the canvas.");
-      return;
+      return false;
     }
     try {
-      const asset = await createStoredAsset(projectRef.current.id, file);
+      const asset = await createStoredAsset(projectRef.current.id, file, source);
       await saveAsset(asset);
       const maxWidth = projectRef.current.canvas.width * 0.7;
       const maxHeight = projectRef.current.canvas.height * 0.7;
@@ -405,9 +456,24 @@ function Editor({
       commitCanvas("Image added");
       setActiveTool("Images");
       setMessage("");
+      return true;
     } catch (error) {
       console.error(error);
       setMessage("That image could not be added. Try PNG, JPEG, or WebP.");
+      return false;
+    }
+  }
+
+  async function addOpenverseImage(image: OpenverseImage): Promise<boolean> {
+    try {
+      const file = await downloadOpenverseImage(image);
+      const added = await addImageBlob(file, openverseAssetSource(image));
+      if (added) setMessage(`Added “${image.title}” with its ${image.license} source receipt.`);
+      return added;
+    } catch (error) {
+      console.error(error);
+      setMessage(error instanceof Error ? error.message : "That open image could not be added.");
+      return false;
     }
   }
 
@@ -416,16 +482,21 @@ function Editor({
     if (fileInput.current) fileInput.current.value = "";
   }
 
-  async function addText() {
+  async function addText(preset: TextPreset) {
+    const styles = {
+      heading: { name: "Heading", text: "Add a heading", fontSize: 86, fontStyle: "bold", width: 820, height: 150 },
+      subheading: { name: "Subheading", text: "Add a subheading", fontSize: 52, fontStyle: "bold", width: 760, height: 100 },
+      body: { name: "Body text", text: "Add a little bit of body text", fontSize: 32, fontStyle: "normal", width: 680, height: 120 },
+    }[preset];
     const design: DesignNode = {
       id: newId(),
       kind: "text",
-      name: "Text",
-      text: "Type something wonderful",
+      name: styles.name,
+      text: styles.text,
       x: projectRef.current.canvas.width * 0.16,
-      y: projectRef.current.canvas.height * 0.72,
-      width: projectRef.current.canvas.width * 0.68,
-      height: 140,
+      y: projectRef.current.canvas.height * (preset === "heading" ? 0.2 : preset === "subheading" ? 0.42 : 0.64),
+      width: Math.min(projectRef.current.canvas.width * 0.68, styles.width),
+      height: styles.height,
       rotation: 0,
       scaleX: 1,
       scaleY: 1,
@@ -434,8 +505,8 @@ function Editor({
       locked: false,
       fill: "#111111",
       fontFamily: "Helvetica",
-      fontSize: 68,
-      fontStyle: "bold",
+      fontSize: styles.fontSize,
+      fontStyle: styles.fontStyle,
       align: "left",
       lineHeight: 1.05,
     };
@@ -446,16 +517,21 @@ function Editor({
     setActiveTool("Text");
   }
 
-  async function addShape() {
+  async function addShape(shape: ShapeKind) {
+    const isLinear = shape === "line" || shape === "arrow";
+    const isWide = isLinear || shape === "speech-bubble";
+    const width = projectRef.current.canvas.width * (isWide ? 0.42 : 0.28);
+    const height = projectRef.current.canvas.height * (isLinear ? 0.08 : shape === "speech-bubble" ? 0.2 : 0.28);
+    const label = SHAPE_OPTIONS.find((option) => option.kind === shape)?.label ?? "Shape";
     const design: DesignNode = {
       id: newId(),
       kind: "shape",
-      name: "Shape",
-      shape: "rect",
-      x: projectRef.current.canvas.width * 0.28,
-      y: projectRef.current.canvas.height * 0.28,
-      width: projectRef.current.canvas.width * 0.44,
-      height: projectRef.current.canvas.height * 0.25,
+      name: label,
+      shape,
+      x: (projectRef.current.canvas.width - width) / 2,
+      y: (projectRef.current.canvas.height - height) / 2,
+      width,
+      height,
       rotation: 0,
       scaleX: 1,
       scaleY: 1,
@@ -463,7 +539,7 @@ function Editor({
       visible: true,
       locked: false,
       fill: "#d9d9d9",
-      cornerRadius: 28,
+      cornerRadius: shape === "rounded-rect" ? 28 : 0,
     };
     layerRef.current?.add(await designNodeToKonva(design, loadAsset));
     transformerRef.current?.moveToTop();
@@ -481,7 +557,8 @@ function Editor({
 
   function setFill(color: string) {
     if (!selectedNodeRef.current || selectedObject?.kind === "image") return;
-    updateSelectedLive({ fill: color });
+    applyDesignFill(selectedNodeRef.current, color);
+    layerRef.current?.batchDraw();
     commitCanvas("Color changed");
   }
 
@@ -528,7 +605,7 @@ function Editor({
     updateTextProperty({ fontStyle: active.size ? [...active].join(" ") : "normal" }, "Typography changed");
   }
 
-  function changeShapeType(shape: "rect" | "ellipse") {
+  function changeShapeType(shape: ShapeKind) {
     if (!selectedId) return;
     const nextObjects = projectRef.current.objects.map((object) =>
       object.id === selectedId && object.kind === "shape" ? { ...object, shape } : object,
@@ -813,12 +890,41 @@ function Editor({
     if (activeTool === "Account") {
       return <AccountPanel model={accountConnections} />;
     }
+    if (activeTool === "Images") {
+      return <ImagePanel upload={() => fileInput.current?.click()} addOpenImage={addOpenverseImage} />;
+    }
+    if (activeTool === "Text") {
+      return (
+        <>
+          <div className="panel-heading"><p>TYPE TOOL</p><h1>Text</h1></div>
+          <div className="text-preset-list">
+            <button className="text-preset heading" onClick={() => void addText("heading")}><Plus size={17} /><span><strong>Add a heading</strong><small>Bold display text</small></span></button>
+            <button className="text-preset subheading" onClick={() => void addText("subheading")}><Plus size={17} /><span><strong>Add a subheading</strong><small>Supporting emphasis</small></span></button>
+            <button className="text-preset body" onClick={() => void addText("body")}><Plus size={17} /><span><strong>Add body text</strong><small>Readable paragraphs and captions</small></span></button>
+          </div>
+          <div className="panel-section hint-card"><strong>Edit text on the right</strong><p>Select a text layer to change its words, typeface, size, alignment, color, and spacing.</p></div>
+        </>
+      );
+    }
+    if (activeTool === "Shapes") {
+      return (
+        <>
+          <div className="panel-heading"><p>ELEMENT LIBRARY</p><h1>Shapes</h1></div>
+          <div className="shape-library">
+            {SHAPE_OPTIONS.map((option) => (
+              <button key={option.kind} onClick={() => void addShape(option.kind)} aria-label={`Add ${option.label}`}>
+                <ShapeIcon shape={option.kind} />
+                <span>{option.label}</span>
+              </button>
+            ))}
+          </div>
+          <div className="panel-section hint-card"><strong>Built to stay editable</strong><p>Every shape can be resized, rotated, recolored, layered, duplicated, and undone.</p></div>
+        </>
+      );
+    }
     return (
       <>
-        <div className="panel-heading"><p>START WITH</p><h1>{activeTool}</h1></div>
-        <button className="upload-card" onClick={() => fileInput.current?.click()}>
-          <ImagePlus size={26} /><span>Bring in an image</span><small>Upload, paste, drop, or capture a page</small>
-        </button>
+        <div className="panel-heading"><p>ARTBOARD SETUP</p><h1>Canvas</h1></div>
         <div className="panel-section">
           <div className="section-label"><span>Canvas size</span><small>{project.canvas.width} × {project.canvas.height}</small></div>
           <div className="preset-grid">
@@ -827,12 +933,7 @@ function Editor({
             ))}
           </div>
         </div>
-        <div className="panel-section">
-          <div className="section-label"><span>Artboard color</span><small>{project.canvas.background}</small></div>
-          <div className="swatches">
-            {SWATCHES.map((color) => <button key={color} aria-label={`Use ${color} for the artboard`} style={{ background: color }} onClick={() => setBackground(color)} />)}
-          </div>
-        </div>
+        <div className="panel-section"><ColorPicker label="Artboard color" value={project.canvas.background} onChange={setBackground} /></div>
         <div className="panel-section hint-card"><strong>Keyboard friendly</strong><p>Paste images, nudge with arrow keys, duplicate with ⌘/Ctrl+D, and undo with ⌘/Ctrl+Z.</p></div>
       </>
     );
@@ -859,9 +960,9 @@ function Editor({
 
       <aside className="toolrail" aria-label="Creative tools">
         <Tool icon={<MousePointer2 />} label="Select" active={activeTool === "Select"} onClick={() => setActiveTool("Select")} />
-        <Tool icon={<ImagePlus />} label="Images" active={activeTool === "Images"} onClick={() => { setActiveTool("Images"); fileInput.current?.click(); }} />
-        <Tool icon={<Type />} label="Text" active={activeTool === "Text"} onClick={() => void addText()} />
-        <Tool icon={<Shapes />} label="Shapes" active={activeTool === "Shapes"} onClick={() => void addShape()} />
+        <Tool icon={<ImagePlus />} label="Images" active={activeTool === "Images"} onClick={() => setActiveTool("Images")} />
+        <Tool icon={<Type />} label="Text" active={activeTool === "Text"} onClick={() => setActiveTool("Text")} />
+        <Tool icon={<Shapes />} label="Shapes" active={activeTool === "Shapes"} onClick={() => setActiveTool("Shapes")} />
         <Tool icon={<Layers3 />} label="Layers" active={activeTool === "Layers"} onClick={() => setActiveTool("Layers")} />
         <Tool icon={<FolderOpen />} label="Files" active={activeTool === "Files"} onClick={() => setActiveTool("Files")} />
         <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(event) => handleUpload(event.target.files?.[0])} />
@@ -920,10 +1021,10 @@ function Editor({
               </>
             )}
             {selectedObject.kind !== "image" && (
-              <label className="inspector-field color-field"><span>Fill</span><input type="color" value={selectedObject.fill} onChange={(event) => setFill(event.target.value)} /><code>{selectedObject.fill}</code></label>
+              <ColorPicker label="Fill" value={selectedObject.fill} onChange={setFill} compact />
             )}
             {selectedObject.kind === "shape" && (
-              <div className="shape-controls"><span>Shape</span><div><button className={selectedObject.shape === "rect" ? "active" : ""} onClick={() => changeShapeType("rect")}>Rectangle</button><button className={selectedObject.shape === "ellipse" ? "active" : ""} onClick={() => changeShapeType("ellipse")}>Ellipse</button></div></div>
+              <label className="inspector-field shape-select"><span>Shape</span><select value={selectedObject.shape} onChange={(event) => changeShapeType(event.target.value as ShapeKind)}>{SHAPE_OPTIONS.map((option) => <option key={option.kind} value={option.kind}>{option.label}</option>)}</select></label>
             )}
             {selectedObject.kind === "image" && (
               <PhotoInspector
@@ -932,6 +1033,7 @@ function Editor({
                 updateAdjustments={updateImageAdjustments}
                 applyCrop={applyCropAspect}
                 reset={resetPhotoEdits}
+                source={selectedAssetSource}
               />
             )}
             <label className="property-row"><span>Opacity <small>{Math.round(selectedObject.opacity * 100)}%</small></span><input key={`${selectedObject.id}-opacity`} type="range" min="0" max="100" defaultValue={selectedObject.opacity * 100} onChange={(event) => updateSelectedLive({ opacity: Number(event.target.value) / 100 })} onPointerUp={() => commitCanvas("Opacity changed")} onKeyUp={() => commitCanvas("Opacity changed")} /></label>
@@ -968,18 +1070,184 @@ function Tool({ icon, label, active, onClick }: { icon: React.ReactNode; label: 
   return <button className={active ? "active" : ""} onClick={onClick}>{icon}<span>{label}</span></button>;
 }
 
+function normalizeHexColor(value: string): string | null {
+  const normalized = value.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(normalized)) return normalized;
+  if (/^#[0-9a-f]{3}$/.test(normalized)) return `#${[...normalized.slice(1)].map((character) => character.repeat(2)).join("")}`;
+  return null;
+}
+
+function ColorPicker({
+  label,
+  value,
+  onChange,
+  compact = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (color: string) => void;
+  compact?: boolean;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+
+  function commitDraft() {
+    const color = normalizeHexColor(draft);
+    if (color) onChange(color);
+    else setDraft(value);
+  }
+
+  return (
+    <div className={`color-picker ${compact ? "compact" : ""}`}>
+      <div className="color-picker-heading"><span>{label}</span><code>{value.toUpperCase()}</code></div>
+      <div className="color-picker-controls">
+        <div className="color-wheel-control" title={`Choose any ${label.toLowerCase()}`}>
+          <input aria-label={`${label} color wheel`} type="color" value={value} onChange={(event) => onChange(event.target.value)} />
+          <Palette size={17} aria-hidden="true" />
+        </div>
+        <input
+          className="hex-color-input"
+          aria-label={`${label} hex value`}
+          value={draft}
+          maxLength={7}
+          spellCheck={false}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commitDraft}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+            if (event.key === "Escape") {
+              setDraft(value);
+              event.currentTarget.blur();
+            }
+          }}
+        />
+      </div>
+      {!compact && (
+        <div className="swatches" aria-label={`${label} presets`}>
+          {COLOR_SWATCHES.map((color) => <button className={value.toLowerCase() === color ? "active" : ""} key={color} aria-label={`Use ${color} for ${label.toLowerCase()}`} style={{ background: color }} onClick={() => onChange(color)} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ShapeIcon({ shape }: { shape: ShapeKind }) {
+  const common = { fill: "currentColor", stroke: "currentColor", strokeWidth: 5, strokeLinejoin: "round" as const, strokeLinecap: "round" as const };
+  return (
+    <svg viewBox="0 0 100 72" aria-hidden="true">
+      {shape === "rect" && <rect x="10" y="10" width="80" height="52" {...common} />}
+      {shape === "rounded-rect" && <rect x="10" y="10" width="80" height="52" rx="15" {...common} />}
+      {shape === "ellipse" && <ellipse cx="50" cy="36" rx="38" ry="27" {...common} />}
+      {shape === "triangle" && <polygon points="50,7 91,64 9,64" {...common} />}
+      {shape === "diamond" && <polygon points="50,5 92,36 50,67 8,36" {...common} />}
+      {shape === "pentagon" && <polygon points="50,5 93,32 77,67 23,67 7,32" {...common} />}
+      {shape === "hexagon" && <polygon points="27,6 73,6 94,36 73,66 27,66 6,36" {...common} />}
+      {shape === "star" && <polygon points="50,4 60,26 86,27 66,43 73,68 50,54 27,68 34,43 14,27 40,26" {...common} />}
+      {shape === "heart" && <path d="M50 66C42 55 11 39 11 20 11 4 35 1 50 21 65 1 89 4 89 20 89 39 58 55 50 66Z" {...common} />}
+      {shape === "speech-bubble" && <path d="M12 8H88Q96 8 96 16V49Q96 57 88 57H43L24 69 28 57H12Q4 57 4 49V16Q4 8 12 8Z" {...common} />}
+      {shape === "line" && <line x1="9" y1="36" x2="91" y2="36" fill="none" stroke="currentColor" strokeWidth="10" strokeLinecap="round" />}
+      {shape === "arrow" && <path d="M8 36H82M64 15L88 36 64 57" fill="none" stroke="currentColor" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" />}
+    </svg>
+  );
+}
+
+function ImagePanel({
+  upload,
+  addOpenImage,
+}: {
+  upload: () => void;
+  addOpenImage: (image: OpenverseImage) => Promise<boolean>;
+}) {
+  const abortRef = useRef<AbortController | null>(null);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<OpenverseImage[]>([]);
+  const [status, setStatus] = useState<"idle" | "searching" | "results" | "empty" | "error">("idle");
+  const [error, setError] = useState("");
+  const [addingId, setAddingId] = useState<string | null>(null);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  async function searchImages(nextQuery = query) {
+    const normalized = nextQuery.trim();
+    if (!normalized) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setQuery(normalized);
+    setStatus("searching");
+    setError("");
+    try {
+      const nextResults = await searchOpenverseImages(normalized, fetch, controller.signal);
+      setResults(nextResults);
+      setStatus(nextResults.length ? "results" : "empty");
+    } catch (searchError) {
+      if (controller.signal.aborted) return;
+      setError(searchError instanceof Error ? searchError.message : "Open image search failed.");
+      setStatus("error");
+    }
+  }
+
+  async function add(image: OpenverseImage) {
+    setAddingId(image.id);
+    await addOpenImage(image);
+    setAddingId(null);
+  }
+
+  return (
+    <>
+      <div className="panel-heading"><p>YOUR MEDIA</p><h1>Images</h1></div>
+      <button className="upload-card image-upload" onClick={upload}>
+        <Upload size={25} /><span>Upload from computer</span><small>PNG, JPEG, WebP, or GIF</small>
+      </button>
+      <div className="image-search-section">
+        <div className="section-label"><span>Search open images</span><small>OPENVERSE</small></div>
+        <form className="image-search-form" onSubmit={(event) => { event.preventDefault(); void searchImages(); }}>
+          <Search size={16} aria-hidden="true" />
+          <input aria-label="Search open images" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Flowers, sunsets, textures…" maxLength={200} />
+          <button aria-label="Search" disabled={!query.trim() || status === "searching"}>{status === "searching" ? <LoaderCircle className="spin" size={16} /> : <Search size={16} />}</button>
+        </form>
+        {status === "idle" && (
+          <div className="search-suggestions">
+            {["Birthday", "Flowers", "Paper texture"].map((suggestion) => <button key={suggestion} onClick={() => void searchImages(suggestion)}>{suggestion}</button>)}
+          </div>
+        )}
+        {status === "error" && <p className="search-feedback error">{error}</p>}
+        {status === "empty" && <p className="search-feedback">No reusable images matched “{query}.” Try a broader search.</p>}
+        {status === "results" && (
+          <div className="image-results" aria-live="polite">
+            {results.map((image) => (
+              <article className="image-result" key={image.id}>
+                <button className="image-result-add" onClick={() => void add(image)} disabled={addingId !== null} aria-label={`Add ${image.title}`}>
+                  <img src={image.thumbnailUrl} alt="" loading="lazy" />
+                  <span>{addingId === image.id ? <><LoaderCircle className="spin" size={14} /> Adding</> : <><Plus size={14} /> Add</>}</span>
+                </button>
+                <strong title={image.title}>{image.title}</strong>
+                <small>{image.creator} · {image.license}</small>
+                <a href={image.sourceUrl} target="_blank" rel="noreferrer">Check source <ExternalLink size={10} /></a>
+              </article>
+            ))}
+          </div>
+        )}
+        <p className="openverse-note">Openverse indexes openly licensed work. ImageStitch stores its source receipt, but you should verify the license before publishing.</p>
+      </div>
+    </>
+  );
+}
+
 function PhotoInspector({
   image,
   applyPreset,
   updateAdjustments,
   applyCrop,
   reset,
+  source,
 }: {
   image: ImageDesignNode;
   applyPreset: (preset: PhotoPreset) => void;
   updateAdjustments: (patch: Partial<ImageAdjustments>, summary: string, commit?: boolean) => void;
   applyCrop: (aspect: number | null, label: string) => void;
   reset: () => void;
+  source: AssetSource | null;
 }) {
   return (
     <div className="photo-inspector">
@@ -1004,6 +1272,13 @@ function PhotoInspector({
         <button onClick={() => applyCrop(16 / 9, "widescreen")}>16:9</button>
       </div>
       <button className="reset-edits" onClick={reset}><RotateCcw size={14} /> Reset photo edits</button>
+      {source && (
+        <div className="asset-source-receipt">
+          <span>IMAGE SOURCE · {source.license}</span>
+          <p>{source.attribution}</p>
+          <a href={source.sourceUrl} target="_blank" rel="noreferrer">Verify source <ExternalLink size={11} /></a>
+        </div>
+      )}
     </div>
   );
 }
