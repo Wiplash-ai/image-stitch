@@ -1,8 +1,8 @@
 # ImageStitch implementation plan
 
-**Status:** Accepted foundation  
-**Version:** 0.1  
-**Updated:** 2026-08-12
+**Status:** Accepted foundation
+**Version:** 0.2
+**Updated:** 2026-08-13
 
 ## Product objective
 
@@ -64,6 +64,8 @@ under five minutes.
 
 ### Phase 3 — reviewable AI
 
+- [x] Optional account shell and separate ChatGPT/Codex versus OpenAI API
+  connection states, backed by a public private-service client contract.
 - `imagestitch.edit-plan.v1` validator and selective plan review UI.
 - MCP tools for inspecting projects, adding assets, proposing edits, applying
   approved operations, and exporting approved revisions.
@@ -79,6 +81,8 @@ made without a clear user action and disclosed data scope.
 ### Phase 4 — optional account and collaboration
 
 - Accountless operation remains the default.
+- Production account service, passkey/magic-link sign-in, device linking,
+  credential vaulting, revocation, and tenant-scoped audit events.
 - Optional encrypted sync, project sharing, comments, and approval links.
 - Team roles, brand-kit sharing, revision comparison, and audit events.
 - Paid packaging only for durable cloud/team value—not basic editing or access

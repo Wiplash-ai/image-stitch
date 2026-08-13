@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Konva from "konva";
 import {
-  Bot,
   Bold,
   BringToFront,
   ChevronDown,
@@ -27,6 +26,7 @@ import {
   Type,
   Undo2,
   Unlock,
+  UserRound,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -71,13 +71,16 @@ import {
 } from "./lib/storage";
 import { buildProjectBundle, downloadTextFile, readProjectBundle, safeFilename } from "./lib/bundle";
 import { PHOTO_PRESETS, centerCropForAspect, fitDisplayBoxToAspect, type PhotoPreset } from "./lib/image-edits";
+import { AccountPanel } from "./components/AccountPanel";
+import { AiConnectionsPanel } from "./components/AiConnectionsPanel";
+import { useAccountConnections } from "./hooks/use-account-connections";
 
 const SWATCHES = ["#19352e", "#db5d3f", "#e8af45", "#6d8f77", "#5273a8", "#f8f0df"];
 const MAX_STAGE_SIZE = 640;
 const FONT_FAMILIES = ["Georgia", "Arial", "Helvetica", "Trebuchet MS", "Courier New"];
 
 type SaveState = "saving" | "saved" | "error";
-type ToolName = "Select" | "Images" | "Text" | "Shapes" | "Layers" | "Files" | "AI";
+type ToolName = "Select" | "Images" | "Text" | "Shapes" | "Layers" | "Files" | "AI" | "Account";
 
 function App() {
   const [project, setProject] = useState<ImageStitchProject | null>(null);
@@ -128,6 +131,7 @@ function Editor({
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [recentProjects, setRecentProjects] = useState<ImageStitchProject[]>([]);
   const [zoom, setZoom] = useState(1);
+  const accountConnections = useAccountConnections();
   const selectedObject = project.objects.find((object) => object.id === selectedId) ?? null;
   const fitScale = Math.min(MAX_STAGE_SIZE / project.canvas.width, MAX_STAGE_SIZE / project.canvas.height);
   const viewScale = fitScale * zoom;
@@ -804,18 +808,10 @@ function Editor({
       );
     }
     if (activeTool === "AI") {
-      return (
-        <>
-          <div className="panel-heading"><p>REVIEWABLE ASSISTANT</p><h1>Ask AI</h1></div>
-          <div className="ai-placeholder">
-            <Sparkles size={26} />
-            <h3>Your canvas stays in charge.</h3>
-            <p>The assistant connection comes next. It will use credentials you provide and return an edit plan you can inspect before anything changes.</p>
-            <button disabled>Connect an AI provider</button>
-          </div>
-          <div className="panel-section ai-note"><Bot size={20} /><div><strong>No bundled AI surcharge</strong><p>ImageStitch will keep provider authentication separate from the local project file.</p></div></div>
-        </>
-      );
+      return <AiConnectionsPanel model={accountConnections} projectId={project.id} openAccount={() => setActiveTool("Account")} />;
+    }
+    if (activeTool === "Account") {
+      return <AccountPanel model={accountConnections} />;
     }
     return (
       <>
@@ -856,6 +852,7 @@ function Editor({
           <button className="icon-button" aria-label="Undo" title="Undo (Ctrl/⌘+Z)" disabled={!canUndo(project)} onClick={undo}><Undo2 size={18} /></button>
           <button className="icon-button" aria-label="Redo" title="Redo (Ctrl/⌘+Shift+Z)" disabled={!canRedo(project)} onClick={redo}><Redo2 size={18} /></button>
           <button className="ai-button" onClick={() => setActiveTool("AI")}><Sparkles size={17} /> Ask AI</button>
+          <button className="account-button" onClick={() => setActiveTool("Account")}><UserRound size={17} /> {accountConnections.snapshot.account?.displayName ?? "Sign in"}</button>
           <button className="export-button" onClick={() => exportImage("image/png")}><Download size={17} /> Export PNG</button>
         </div>
       </header>
