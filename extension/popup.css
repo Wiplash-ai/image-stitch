@@ -1,0 +1,14 @@
+:root { font-family: Georgia, serif; color: #171712; background: #f4efe5; }
+* { box-sizing: border-box; }
+body { width: 320px; margin: 0; }
+header { display: flex; align-items: center; gap: 11px; padding: 14px 16px; border-bottom: 1px solid #171712; }
+header img { width: 42px; height: 42px; }
+header div { display: grid; gap: 3px; }
+header strong { font-size: 20px; }
+header span, small { font: 9px/1.45 monospace; letter-spacing: .08em; color: #6e695f; }
+main { display: grid; gap: 10px; padding: 18px 16px; }
+p { margin: 0 0 5px; font: 14px/1.45 sans-serif; }
+button { min-height: 42px; border: 1px solid #171712; background: #ff6b4a; font: 700 12px sans-serif; cursor: pointer; box-shadow: 3px 3px 0 #171712; }
+button:active { transform: translate(3px, 3px); box-shadow: none; }
+button.secondary { background: #fffdf8; }
+small { margin-top: 4px; }

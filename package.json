@@ -1,0 +1,29 @@
+{
+  "name": "image-stitch",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "build:extension": "npm run build && node scripts/package-extension.mjs",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "verify": "npm run test && npm run build:extension"
+  },
+  "dependencies": {
+    "konva": "^10.0.0",
+    "lucide-react": "^0.544.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.1",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.4",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.7",
+    "vitest": "^3.2.4"
+  }
+}

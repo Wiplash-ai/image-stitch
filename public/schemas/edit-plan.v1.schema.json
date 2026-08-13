@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://imagestitch.dev/schemas/edit-plan.v1.schema.json",
+  "title": "ImageStitch edit plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "baseRevisionId", "createdAt", "provenance", "operations"],
+  "properties": {
+    "schemaVersion": { "const": "imagestitch.edit-plan.v1" },
+    "id": { "type": "string", "format": "uuid" },
+    "baseRevisionId": { "type": "string", "format": "uuid" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "provenance": { "type": "string", "minLength": 1 },
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id", "kind", "rationale", "status"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "kind": { "enum": ["add-image", "add-text", "add-shape", "update-object", "remove-object", "reorder-objects", "set-canvas", "apply-filter"] },
+          "rationale": { "type": "string" },
+          "status": { "enum": ["proposed", "accepted", "rejected"] }
+        }
+      }
+    }
+  }
+}
