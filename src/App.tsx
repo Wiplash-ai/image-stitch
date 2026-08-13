@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Konva from "konva";
 import {
   Bot,
+  Bold,
   BringToFront,
   ChevronDown,
   ChevronUp,
@@ -12,10 +13,12 @@ import {
   FilePlus2,
   FolderOpen,
   ImagePlus,
+  Italic,
   Layers3,
   Lock,
   MousePointer2,
   Redo2,
+  RotateCcw,
   Save,
   SendToBack,
   Shapes,
@@ -24,9 +27,13 @@ import {
   Type,
   Undo2,
   Unlock,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import {
   CANVAS_PRESETS,
+  DEFAULT_IMAGE_ADJUSTMENTS,
+  FULL_IMAGE_CROP,
   canRedo,
   canUndo,
   commitSnapshot,
@@ -38,10 +45,14 @@ import {
   undoProject,
   type CanvasPreset,
   type DesignNode,
+  type ImageAdjustments,
+  type ImageDesignNode,
   type ImageStitchProject,
+  type NormalizedCrop,
 } from "./lib/model";
 import {
   DESIGN_OBJECT_NAME,
+  applyImagePresentation,
   applyLockedState,
   designNodeToKonva,
   findDesignNode,
@@ -59,9 +70,11 @@ import {
   saveProject,
 } from "./lib/storage";
 import { buildProjectBundle, downloadTextFile, readProjectBundle, safeFilename } from "./lib/bundle";
+import { PHOTO_PRESETS, centerCropForAspect, fitDisplayBoxToAspect, type PhotoPreset } from "./lib/image-edits";
 
 const SWATCHES = ["#19352e", "#db5d3f", "#e8af45", "#6d8f77", "#5273a8", "#f8f0df"];
 const MAX_STAGE_SIZE = 640;
+const FONT_FAMILIES = ["Georgia", "Arial", "Helvetica", "Trebuchet MS", "Courier New"];
 
 type SaveState = "saving" | "saved" | "error";
 type ToolName = "Select" | "Images" | "Text" | "Shapes" | "Layers" | "Files" | "AI";
@@ -102,6 +115,7 @@ function Editor({
   const transformerRef = useRef<Konva.Transformer | null>(null);
   const selectedNodeRef = useRef<Konva.Node | null>(null);
   const projectRef = useRef(initialProject);
+  const zoomRef = useRef(1);
   const renderVersionRef = useRef(0);
   const saveVersionRef = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -113,8 +127,10 @@ function Editor({
   const [message, setMessage] = useState("");
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [recentProjects, setRecentProjects] = useState<ImageStitchProject[]>([]);
+  const [zoom, setZoom] = useState(1);
   const selectedObject = project.objects.find((object) => object.id === selectedId) ?? null;
-  const viewScale = Math.min(MAX_STAGE_SIZE / project.canvas.width, MAX_STAGE_SIZE / project.canvas.height);
+  const fitScale = Math.min(MAX_STAGE_SIZE / project.canvas.width, MAX_STAGE_SIZE / project.canvas.height);
+  const viewScale = fitScale * zoom;
   const stageWidth = Math.round(project.canvas.width * viewScale);
   const stageHeight = Math.round(project.canvas.height * viewScale);
 
@@ -136,7 +152,7 @@ function Editor({
   }
 
   function displayDimensions(next: ImageStitchProject) {
-    const scale = Math.min(MAX_STAGE_SIZE / next.canvas.width, MAX_STAGE_SIZE / next.canvas.height);
+    const scale = Math.min(MAX_STAGE_SIZE / next.canvas.width, MAX_STAGE_SIZE / next.canvas.height) * zoomRef.current;
     return {
       scale,
       width: Math.round(next.canvas.width * scale),
@@ -209,6 +225,45 @@ function Editor({
     void persist(next);
   }
 
+  function clearSnapGuides() {
+    layerRef.current?.find(".snap-guide").forEach((guide) => guide.destroy());
+  }
+
+  function snapDraggedNode(node: Konva.Node) {
+    const layer = layerRef.current;
+    if (!layer) return;
+    clearSnapGuides();
+    const canvas = projectRef.current.canvas;
+    const xGuides = [0, canvas.width / 2, canvas.width];
+    const yGuides = [0, canvas.height / 2, canvas.height];
+    for (const other of layer.find(`.${DESIGN_OBJECT_NAME}`)) {
+      if (other === node || !other.visible()) continue;
+      const rect = other.getClientRect({ relativeTo: layer, skipShadow: true, skipStroke: true });
+      xGuides.push(rect.x, rect.x + rect.width / 2, rect.x + rect.width);
+      yGuides.push(rect.y, rect.y + rect.height / 2, rect.y + rect.height);
+    }
+    const rect = node.getClientRect({ relativeTo: layer, skipShadow: true, skipStroke: true });
+    const ownX = [rect.x, rect.x + rect.width / 2, rect.x + rect.width];
+    const ownY = [rect.y, rect.y + rect.height / 2, rect.y + rect.height];
+    const threshold = 8 / displayDimensions(projectRef.current).scale;
+    const xMatch = xGuides
+      .flatMap((guide) => ownX.map((point) => ({ guide, delta: guide - point })))
+      .filter((match) => Math.abs(match.delta) <= threshold)
+      .sort((a, b) => Math.abs(a.delta) - Math.abs(b.delta))[0];
+    const yMatch = yGuides
+      .flatMap((guide) => ownY.map((point) => ({ guide, delta: guide - point })))
+      .filter((match) => Math.abs(match.delta) <= threshold)
+      .sort((a, b) => Math.abs(a.delta) - Math.abs(b.delta))[0];
+    if (xMatch) node.x(node.x() + xMatch.delta);
+    if (yMatch) node.y(node.y() + yMatch.delta);
+    const activeScale = displayDimensions(projectRef.current).scale;
+    const strokeWidth = 1.5 / activeScale;
+    if (xMatch) layer.add(new Konva.Line({ name: "snap-guide", points: [xMatch.guide, 0, xMatch.guide, canvas.height], stroke: "#db5d3f", strokeWidth, dash: [10 / activeScale, 7 / activeScale], listening: false }));
+    if (yMatch) layer.add(new Konva.Line({ name: "snap-guide", points: [0, yMatch.guide, canvas.width, yMatch.guide], stroke: "#db5d3f", strokeWidth, dash: [10 / activeScale, 7 / activeScale], listening: false }));
+    transformerRef.current?.moveToTop();
+    layer.batchDraw();
+  }
+
   useEffect(() => {
     if (!canvasElement.current) return;
     let cancelled = false;
@@ -231,7 +286,14 @@ function Editor({
         : target.findAncestor(`.${DESIGN_OBJECT_NAME}`);
       selectById(designNode ? String((designNode as Konva.Node).getAttr("designId")) : null);
     });
-    stage.on("dragend transformend", (event) => {
+    stage.on("dragmove", (event) => {
+      if (event.target.hasName(DESIGN_OBJECT_NAME)) snapDraggedNode(event.target);
+    });
+    stage.on("dragend", (event) => {
+      clearSnapGuides();
+      if (event.target.hasName(DESIGN_OBJECT_NAME)) commitCanvas("Object moved");
+    });
+    stage.on("transformend", (event) => {
       if (event.target.hasName(DESIGN_OBJECT_NAME)) commitCanvas("Object transformed");
     });
 
@@ -319,6 +381,8 @@ function Editor({
         kind: "image",
         name: asset.name,
         assetId: asset.id,
+        crop: { ...FULL_IMAGE_CROP },
+        adjustments: { ...DEFAULT_IMAGE_ADJUSTMENTS },
         x: (projectRef.current.canvas.width - width) / 2,
         y: (projectRef.current.canvas.height - height) / 2,
         width,
@@ -443,6 +507,108 @@ function Editor({
     commitCanvas("Text edited");
   }
 
+  function updateTextProperty(attributes: Record<string, unknown>, summary: string, commit = true) {
+    const node = selectedNodeRef.current;
+    if (!(node instanceof Konva.Text)) return;
+    node.setAttrs(attributes);
+    transformerRef.current?.forceUpdate();
+    layerRef.current?.batchDraw();
+    if (commit) commitCanvas(summary);
+  }
+
+  function toggleTextStyle(style: "bold" | "italic") {
+    const node = selectedNodeRef.current;
+    if (!(node instanceof Konva.Text)) return;
+    const active = new Set(node.fontStyle().split(" ").filter((value) => value !== "normal"));
+    active.has(style) ? active.delete(style) : active.add(style);
+    updateTextProperty({ fontStyle: active.size ? [...active].join(" ") : "normal" }, "Typography changed");
+  }
+
+  function changeShapeType(shape: "rect" | "ellipse") {
+    if (!selectedId) return;
+    const nextObjects = projectRef.current.objects.map((object) =>
+      object.id === selectedId && object.kind === "shape" ? { ...object, shape } : object,
+    );
+    const next = commitSnapshot(projectRef.current, "Shape changed", {
+      canvas: projectRef.current.canvas,
+      objects: nextObjects,
+    });
+    setCurrentProject(next);
+    void renderProject(next, selectedId);
+    void persist(next);
+  }
+
+  function liveImageState(): { node: Konva.Image; crop: NormalizedCrop; adjustments: ImageAdjustments } | null {
+    const node = selectedNodeRef.current;
+    if (!(node instanceof Konva.Image)) return null;
+    return {
+      node,
+      crop: { ...(node.getAttr("normalizedCrop") ?? FULL_IMAGE_CROP) },
+      adjustments: { ...(node.getAttr("imageAdjustments") ?? DEFAULT_IMAGE_ADJUSTMENTS) },
+    };
+  }
+
+  function updateImageAdjustments(patch: Partial<ImageAdjustments>, summary: string, commit = true) {
+    const current = liveImageState();
+    if (!current) return;
+    const adjustments = { ...current.adjustments, ...patch };
+    applyImagePresentation(current.node, current.crop, adjustments);
+    layerRef.current?.batchDraw();
+    if (commit) commitCanvas(summary);
+  }
+
+  function applyPhotoPreset(preset: PhotoPreset) {
+    const current = liveImageState();
+    if (!current) return;
+    applyImagePresentation(current.node, current.crop, PHOTO_PRESETS[preset]);
+    layerRef.current?.batchDraw();
+    commitCanvas(`Photo preset: ${preset}`);
+  }
+
+  function applyCropAspect(targetAspect: number | null, label: string) {
+    const current = liveImageState();
+    if (!current) return;
+    const source = current.node.image();
+    if (!source || !("width" in source) || !("height" in source)) return;
+    const sourceWidth = Number(source.width);
+    const sourceHeight = Number(source.height);
+    const aspect = targetAspect ?? sourceWidth / sourceHeight;
+    const crop = targetAspect ? centerCropForAspect(sourceWidth, sourceHeight, targetAspect) : { ...FULL_IMAGE_CROP };
+    const box = fitDisplayBoxToAspect({ x: current.node.x(), y: current.node.y(), width: current.node.width(), height: current.node.height() }, aspect);
+    current.node.position({ x: box.x, y: box.y });
+    current.node.width(box.width);
+    current.node.height(box.height);
+    applyImagePresentation(current.node, crop, current.adjustments);
+    transformerRef.current?.forceUpdate();
+    layerRef.current?.batchDraw();
+    commitCanvas(`Crop set to ${label}`);
+  }
+
+  function resetPhotoEdits() {
+    const current = liveImageState();
+    if (!current) return;
+    const source = current.node.image();
+    if (!source || !("width" in source) || !("height" in source)) return;
+    const box = fitDisplayBoxToAspect(
+      { x: current.node.x(), y: current.node.y(), width: current.node.width(), height: current.node.height() },
+      Number(source.width) / Number(source.height),
+    );
+    current.node.position({ x: box.x, y: box.y });
+    current.node.width(box.width);
+    current.node.height(box.height);
+    applyImagePresentation(current.node, FULL_IMAGE_CROP, DEFAULT_IMAGE_ADJUSTMENTS);
+    transformerRef.current?.forceUpdate();
+    layerRef.current?.batchDraw();
+    commitCanvas("Photo edits reset");
+  }
+
+  function changeZoom(delta: number | "fit") {
+    const nextZoom = delta === "fit" ? 1 : Math.min(1.75, Math.max(0.5, zoomRef.current + delta));
+    zoomRef.current = nextZoom;
+    setZoom(nextZoom);
+    void renderProject(projectRef.current, selectedId);
+  }
+
   function toggleVisibility(designId: string) {
     const node = layerRef.current && findDesignNode(layerRef.current, designId);
     if (!node) return;
@@ -491,6 +657,9 @@ function Editor({
       objects: [...projectRef.current.objects, copy],
     });
     setCurrentProject(next);
+    selectedNodeRef.current = null;
+    transformerRef.current?.nodes([]);
+    setSelectedId(copy.id);
     void renderProject(next, copy.id);
     void persist(next);
   }
@@ -717,7 +886,14 @@ function Editor({
           if (image) void addImageBlob(image);
         }}
       >
-        <div className="stage-meta" style={{ width: stageWidth }}><span>ARTBOARD 01</span><span>{Math.round(viewScale * 100)}%</span></div>
+        <div className="stage-meta" style={{ width: stageWidth }}>
+          <span>ARTBOARD 01</span>
+          <div className="zoom-controls">
+            <button aria-label="Zoom out" onClick={() => changeZoom(-0.25)} disabled={zoom <= 0.5}><ZoomOut size={13} /></button>
+            <button onClick={() => changeZoom("fit")} title="Fit artboard">{Math.round(viewScale * 100)}%</button>
+            <button aria-label="Zoom in" onClick={() => changeZoom(0.25)} disabled={zoom >= 1.75}><ZoomIn size={13} /></button>
+          </div>
+        </div>
         <div className="paper-wrap"><div ref={canvasElement} className="design-canvas" /></div>
         <p className={`local-status status-${saveState}`}>
           <span /> {saveState === "saving" ? "Saving locally…" : saveState === "error" ? "Local save failed" : "Saved on this device"} · Revision {project.revisions[currentRevisionIndex(project)]?.number ?? 1}
@@ -732,10 +908,34 @@ function Editor({
           <>
             <label className="inspector-field"><span>Layer name</span><input key={`${selectedObject.id}-name`} defaultValue={selectedObject.name} onBlur={(event) => updateSelectedName(event.target.value)} /></label>
             {selectedObject.kind === "text" && (
-              <label className="inspector-field"><span>Text</span><textarea key={`${selectedObject.id}-text`} defaultValue={selectedObject.text} rows={4} onBlur={(event) => updateSelectedText(event.target.value)} /></label>
+              <>
+                <label className="inspector-field"><span>Text</span><textarea key={`${selectedObject.id}-text`} defaultValue={selectedObject.text} rows={4} onBlur={(event) => updateSelectedText(event.target.value)} /></label>
+                <div className="typography-controls">
+                  <label className="inspector-field"><span>Typeface</span><select value={selectedObject.fontFamily} onChange={(event) => updateTextProperty({ fontFamily: event.target.value }, "Typeface changed")}>{FONT_FAMILIES.map((font) => <option key={font}>{font}</option>)}</select></label>
+                  <label className="control-slider"><span>Size <small>{Math.round(selectedObject.fontSize)} px</small></span><input key={`${selectedObject.id}-font-size`} type="range" min="12" max="220" defaultValue={selectedObject.fontSize} onChange={(event) => updateTextProperty({ fontSize: Number(event.target.value) }, "Text size changed", false)} onPointerUp={() => commitCanvas("Text size changed")} onKeyUp={() => commitCanvas("Text size changed")} /></label>
+                  <div className="text-button-row" aria-label="Text style and alignment">
+                    <button aria-label="Bold" className={selectedObject.fontStyle.includes("bold") ? "active" : ""} onClick={() => toggleTextStyle("bold")}><Bold size={15} /></button>
+                    <button aria-label="Italic" className={selectedObject.fontStyle.includes("italic") ? "active" : ""} onClick={() => toggleTextStyle("italic")}><Italic size={15} /></button>
+                    {(["left", "center", "right"] as const).map((align) => <button aria-label={`Align ${align}`} className={selectedObject.align === align ? "active" : ""} key={align} onClick={() => updateTextProperty({ align }, "Text aligned")}>{align.slice(0, 1).toUpperCase()}</button>)}
+                  </div>
+                  <label className="control-slider"><span>Line height <small>{selectedObject.lineHeight.toFixed(2)}</small></span><input key={`${selectedObject.id}-line-height`} type="range" min="0.7" max="2" step="0.05" defaultValue={selectedObject.lineHeight} onChange={(event) => updateTextProperty({ lineHeight: Number(event.target.value) }, "Line height changed", false)} onPointerUp={() => commitCanvas("Line height changed")} onKeyUp={() => commitCanvas("Line height changed")} /></label>
+                </div>
+              </>
             )}
             {selectedObject.kind !== "image" && (
               <label className="inspector-field color-field"><span>Fill</span><input type="color" value={selectedObject.fill} onChange={(event) => setFill(event.target.value)} /><code>{selectedObject.fill}</code></label>
+            )}
+            {selectedObject.kind === "shape" && (
+              <div className="shape-controls"><span>Shape</span><div><button className={selectedObject.shape === "rect" ? "active" : ""} onClick={() => changeShapeType("rect")}>Rectangle</button><button className={selectedObject.shape === "ellipse" ? "active" : ""} onClick={() => changeShapeType("ellipse")}>Ellipse</button></div></div>
+            )}
+            {selectedObject.kind === "image" && (
+              <PhotoInspector
+                image={selectedObject}
+                applyPreset={applyPhotoPreset}
+                updateAdjustments={updateImageAdjustments}
+                applyCrop={applyCropAspect}
+                reset={resetPhotoEdits}
+              />
             )}
             <label className="property-row"><span>Opacity <small>{Math.round(selectedObject.opacity * 100)}%</small></span><input key={`${selectedObject.id}-opacity`} type="range" min="0" max="100" defaultValue={selectedObject.opacity * 100} onChange={(event) => updateSelectedLive({ opacity: Number(event.target.value) / 100 })} onPointerUp={() => commitCanvas("Opacity changed")} onKeyUp={() => commitCanvas("Opacity changed")} /></label>
             <div className="coordinate-grid">
@@ -769,6 +969,71 @@ function Editor({
 
 function Tool({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
   return <button className={active ? "active" : ""} onClick={onClick}>{icon}<span>{label}</span></button>;
+}
+
+function PhotoInspector({
+  image,
+  applyPreset,
+  updateAdjustments,
+  applyCrop,
+  reset,
+}: {
+  image: ImageDesignNode;
+  applyPreset: (preset: PhotoPreset) => void;
+  updateAdjustments: (patch: Partial<ImageAdjustments>, summary: string, commit?: boolean) => void;
+  applyCrop: (aspect: number | null, label: string) => void;
+  reset: () => void;
+}) {
+  return (
+    <div className="photo-inspector">
+      <div className="inspector-section-title"><span>Looks</span><small>Non-destructive</small></div>
+      <div className="photo-presets">
+        {(Object.keys(PHOTO_PRESETS) as PhotoPreset[]).map((preset) => <button data-preset={preset} key={preset} onClick={() => applyPreset(preset)}><i /><span>{preset}</span></button>)}
+      </div>
+      <div className="inspector-section-title"><span>Adjust</span><small>Saved with project</small></div>
+      <AdjustmentSlider label="Brightness" value={image.adjustments.brightness} min={-1} max={1} step={0.05} display={Math.round(image.adjustments.brightness * 100)} onChange={(value, commit) => updateAdjustments({ brightness: value }, "Brightness changed", commit)} />
+      <AdjustmentSlider label="Contrast" value={image.adjustments.contrast} min={-100} max={100} step={1} display={Math.round(image.adjustments.contrast)} onChange={(value, commit) => updateAdjustments({ contrast: value }, "Contrast changed", commit)} />
+      <AdjustmentSlider label="Saturation" value={image.adjustments.saturation} min={-2} max={2} step={0.05} display={Math.round(image.adjustments.saturation * 100)} onChange={(value, commit) => updateAdjustments({ saturation: value }, "Saturation changed", commit)} />
+      <AdjustmentSlider label="Blur" value={image.adjustments.blur} min={0} max={20} step={0.5} display={image.adjustments.blur} onChange={(value, commit) => updateAdjustments({ blur: value }, "Blur changed", commit)} />
+      <div className="effect-toggles">
+        <button className={image.adjustments.grayscale ? "active" : ""} onClick={() => updateAdjustments({ grayscale: !image.adjustments.grayscale }, "Grayscale toggled")}>B&amp;W</button>
+        <button className={image.adjustments.sepia ? "active" : ""} onClick={() => updateAdjustments({ sepia: !image.adjustments.sepia }, "Sepia toggled")}>Sepia</button>
+      </div>
+      <div className="inspector-section-title"><span>Crop</span><small>Centered presets</small></div>
+      <div className="crop-presets">
+        <button onClick={() => applyCrop(null, "original")}>Original</button>
+        <button onClick={() => applyCrop(1, "square")}>1:1</button>
+        <button onClick={() => applyCrop(4 / 5, "portrait")}>4:5</button>
+        <button onClick={() => applyCrop(16 / 9, "widescreen")}>16:9</button>
+      </div>
+      <button className="reset-edits" onClick={reset}><RotateCcw size={14} /> Reset photo edits</button>
+    </div>
+  );
+}
+
+function AdjustmentSlider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  display,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  display: number;
+  onChange: (value: number, commit: boolean) => void;
+}) {
+  return (
+    <label className="control-slider">
+      <span>{label} <small>{display}</small></span>
+      <input key={`${label}-${value}`} aria-label={label} type="range" min={min} max={max} step={step} defaultValue={value} onChange={(event) => onChange(Number(event.target.value), false)} onPointerUp={(event) => onChange(Number(event.currentTarget.value), true)} onKeyUp={(event) => onChange(Number(event.currentTarget.value), true)} />
+    </label>
+  );
 }
 
 export default App;

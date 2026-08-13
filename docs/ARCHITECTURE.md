@@ -116,11 +116,28 @@ and every plan binds to an immutable base revision.
 - **Consequences:** The UI must explain the distinction and disclose residency
   before a model receives content.
 
+### ADR-005: non-destructive image edits in the project model
+
+- **Status:** Accepted.
+- **Context:** Photo adjustments must survive reload, undo, portable export,
+  canvas-engine upgrades, and future AI edit plans without replacing originals.
+- **Decision:** Keep original blobs immutable. Store crop rectangles as normalized
+  source coordinates and adjustments as bounded typed values on image objects.
+  The canvas adapter renders these values with Konva filters and display-sized
+  caches. Existing v1 image objects migrate to a full crop and neutral settings;
+  the public v1 schema keeps the new fields optional for backward compatibility.
+- **Consequences:** Edits remain reversible and engine-independent. Filter caches
+  consume browser memory, and centered crop presets are intentionally narrower
+  than the future interactive crop tool.
+- **Alternatives:** Destructive raster replacement was simpler but would lose
+  source quality and editability. Persisting Konva filter JSON would couple the
+  public contract to one rendering engine.
+
 ## Risks and mitigations
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| Large images exhaust browser memory | High | Decode limits, proxies, workers, OPFS, export capability checks |
+| Large images or filter caches exhaust browser memory | High | Display-sized caches, decode limits, proxies, workers, OPFS, export capability checks |
 | Konva serialization leaks into contract | High | Adapter and explicit project migrations |
 | Extension and web behavior drift | Medium | Package the same production editor build |
 | Browser storage eviction or quota | High | Persistence request, quota UI, project backups, recovery tests |
