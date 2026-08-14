@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { CheckCircle2, Github, KeyRound, Mail, ShieldCheck, X } from "lucide-react";
+import { Github, KeyRound, Mail, ShieldCheck, X } from "lucide-react";
 import type { AccountConnectionsModel } from "../hooks/use-account-connections";
 
 export function SignInModal({
@@ -13,13 +13,11 @@ export function SignInModal({
 }) {
   const emailInput = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState("");
-  const [sentTo, setSentTo] = useState("");
 
   useEffect(() => {
     if (!open) return;
-    setSentTo("");
     const frame = requestAnimationFrame(() => {
-      if (model.mode === "device") emailInput.current?.focus();
+      emailInput.current?.focus();
     });
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !model.busy) onClose();
@@ -37,8 +35,9 @@ export function SignInModal({
     event.preventDefault();
     const result = await model.signIn(email);
     if (result === "device-session") onClose();
-    if (result === "email-sent") setSentTo(email.trim().toLowerCase());
   }
+
+  const providersDisabled = Boolean(model.busy) || model.cloudStatus === "checking";
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !model.busy && onClose()}>
@@ -47,48 +46,37 @@ export function SignInModal({
           <div className="modal-brand"><img src="./glassware-mark.svg" alt="" /><span>GlassWare</span></div>
           <button className="modal-close" title="Close sign in" aria-label="Close sign in" disabled={Boolean(model.busy)} onClick={onClose}><X size={18} /></button>
         </header>
-        {sentTo ? (
-          <div className="sign-in-success">
-            <span><CheckCircle2 size={28} /></span>
-            <h2 id="sign-in-title">Check your inbox</h2>
-            <p>We sent a secure sign-in link to <strong>{sentTo}</strong>. You can close this window while you wait.</p>
-            <button onClick={onClose}>Done</button>
-          </div>
-        ) : (
-          <>
-            <div className="modal-copy">
-              <p>{model.mode === "service" ? "YOUR WIPLASH ACCOUNT" : "YOUR GLASSWARE PROFILE"}</p>
-              <h2 id="sign-in-title">{model.mode === "service" ? "Sign in to GlassWare" : "Make this editor yours"}</h2>
-              <span>{model.mode === "service"
-                ? "Choose a secure sign-in method. Google and GitHub create or open the same Wiplash account."
-                : "Use your email to personalize GlassWare in this browser while cloud accounts are being connected."}</span>
-            </div>
-            {model.mode === "service" ? (
-              <div className="modal-provider-list" aria-label="Sign-in methods">
-                <button disabled={Boolean(model.busy)} onClick={() => void model.signInWith("google")}>
-                  <GoogleMark /><span>Continue with Google</span>
-                </button>
-                <button disabled={Boolean(model.busy)} onClick={() => void model.signInWith("github")}>
-                  <Github size={18} /><span>Continue with GitHub</span>
-                </button>
-                <button disabled={Boolean(model.busy)} onClick={() => void model.signInWith("wiplash")}>
-                  <KeyRound size={18} /><span>Continue with Wiplash</span>
-                </button>
-              </div>
-            ) : (
-              <form className="modal-sign-in-form" onSubmit={(event) => void submit(event)}>
-                <label htmlFor="modal-account-email">Email address</label>
-                <div><Mail size={17} /><input ref={emailInput} id="modal-account-email" type="email" autoComplete="email" required placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} /></div>
-                <button disabled={model.busy === "sign-in"}>{model.busy === "sign-in" ? "Working…" : "Continue on this device"}</button>
-              </form>
-            )}
-            <div className="modal-security-note"><ShieldCheck size={16} /><p>{model.mode === "service"
-              ? "Secure sessions use protected cookies. Signing in never uploads a project or connects an AI provider by itself."
-              : "This device profile stays in this browser. Cloud sync and provider connections remain unavailable until the account service is connected."}</p></div>
-            {model.error && <button className="modal-error" onClick={model.clearMessage}>{model.error}<small>Dismiss</small></button>}
-            <button className="modal-continue-offline" onClick={onClose}>Keep creating without an account</button>
-          </>
-        )}
+        <div className="modal-copy">
+          <p>YOUR WIPLASH ACCOUNT</p>
+          <h2 id="sign-in-title">Sign in to GlassWare</h2>
+          <span>Use Google, GitHub, or your Wiplash account to keep one secure identity across Wiplash apps.</span>
+        </div>
+        <div className="modal-provider-list" aria-label="Sign-in methods">
+          <button disabled={providersDisabled} onClick={() => void model.signInWith("google")}>
+            <GoogleMark /><span>Continue with Google</span>
+          </button>
+          <button disabled={providersDisabled} onClick={() => void model.signInWith("github")}>
+            <Github size={19} /><span>Continue with GitHub</span>
+          </button>
+          <button disabled={providersDisabled} onClick={() => void model.signInWith("wiplash")}>
+            <KeyRound size={19} /><span>Continue with Wiplash</span>
+          </button>
+        </div>
+        <div className={`modal-cloud-status ${model.cloudStatus}`} role="status" aria-live="polite">
+          <span aria-hidden="true" />
+          <p>{model.cloudMessage}</p>
+        </div>
+        <div className="modal-divider"><span>OR USE THIS DEVICE ONLY</span></div>
+        <form className="modal-sign-in-form" onSubmit={(event) => void submit(event)}>
+          <label htmlFor="modal-account-email">Email for this browser</label>
+          <div className="modal-email-field"><Mail size={19} /><input ref={emailInput} id="modal-account-email" type="email" autoComplete="email" required placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} /></div>
+          <button disabled={model.busy === "sign-in"}>{model.busy === "sign-in" ? "Working…" : "Continue on this device"}</button>
+        </form>
+        <div className="modal-security-note"><ShieldCheck size={18} /><p>
+          Cloud sign-in uses protected cookies. The device profile stays in this browser. Neither option uploads a project or connects an AI provider by itself.
+        </p></div>
+        {model.error && <button className="modal-error" onClick={model.clearMessage}>{model.error}<small>Dismiss</small></button>}
+        <button className="modal-continue-offline" onClick={onClose}>Keep creating without an account</button>
       </section>
     </div>
   );
