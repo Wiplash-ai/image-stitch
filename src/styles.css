@@ -269,45 +269,50 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .panel-message small { display: block; margin-top: 4px; color: var(--muted); font: 7px var(--mono); }
 
 .modal-backdrop { position: fixed; z-index: 50; inset: 0; display: grid; place-items: center; padding: 28px; background: rgba(17,17,17,.62); backdrop-filter: blur(5px); }
-.sign-in-modal { position: relative; width: min(440px, 100%); overflow: hidden; border: 1px solid var(--ink); border-radius: 10px; background: var(--white); box-shadow: 0 28px 85px rgba(0,0,0,.35); }
+.sign-in-modal { position: relative; width: min(520px, 100%); max-height: calc(100vh - 56px); overflow-x: hidden; overflow-y: auto; border: 1px solid var(--ink); border-radius: 12px; background: var(--white); box-shadow: 0 28px 85px rgba(0,0,0,.35); }
 .sign-in-modal::before { content: ""; position: absolute; z-index: 2; inset: 0 0 auto; height: 5px; background: linear-gradient(90deg, #ff4b4b 0 18%, #ff9f1c 18% 35%, #ffe83b 35% 51%, #2fca75 51% 67%, #2ca8ff 67% 84%, #7c5cff 84% 100%); }
-.sign-in-modal > header { height: 67px; display: flex; align-items: center; justify-content: space-between; padding: 9px 13px 8px 17px; border-bottom: 1px solid var(--line); }
-.modal-brand { display: flex; align-items: center; gap: 9px; font: 700 15px var(--display); }
-.modal-brand img { width: 30px; height: 30px; }
-.modal-close { width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 5px; background: transparent; cursor: pointer; }
+.sign-in-modal > header { height: 72px; display: flex; align-items: center; justify-content: space-between; padding: 10px 16px 8px 20px; border-bottom: 1px solid var(--line); }
+.modal-brand { display: flex; align-items: center; gap: 10px; font: 700 17px var(--display); }
+.modal-brand img { width: 34px; height: 34px; }
+.modal-close { width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
 .modal-close:hover { background: var(--surface-strong); }
 .modal-close:disabled { opacity: .4; cursor: wait; }
-.modal-copy { padding: 28px 32px 19px; text-align: center; }
-.modal-copy > p { margin: 0 0 8px; color: var(--muted); font: 700 8px var(--mono); letter-spacing: .13em; }
-.modal-copy h2 { margin: 0; font: 750 28px/1.05 var(--display); letter-spacing: -.04em; }
-.modal-copy > span { display: block; max-width: 340px; margin: 12px auto 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
-.modal-sign-in-form { display: grid; gap: 8px; padding: 0 32px; }
-.modal-sign-in-form > label { font-size: 10px; font-weight: 700; }
-.modal-sign-in-form > div { height: 43px; display: grid; grid-template-columns: 42px 1fr; align-items: center; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--white); }
-.modal-sign-in-form > div:focus-within { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
-.modal-sign-in-form svg { margin: auto; color: var(--muted); }
-.modal-sign-in-form input { min-width: 0; height: 100%; padding: 0 10px; border: 0; border-left: 1px solid var(--line); outline: 0; font-size: 12px; }
-.modal-sign-in-form > button, .sign-in-success > button { min-height: 42px; margin-top: 3px; border: 1px solid var(--ink); border-radius: 6px; color: var(--white); background: var(--ink); cursor: pointer; font-size: 10px; font-weight: 750; }
-.modal-sign-in-form > button:hover, .sign-in-success > button:hover { background: #2b2b2b; }
-.modal-sign-in-form > button:disabled { opacity: .55; cursor: wait; }
-.modal-provider-list { display: grid; gap: 9px; padding: 0 32px; }
-.modal-provider-list button { min-height: 44px; display: grid; grid-template-columns: 24px 1fr 24px; align-items: center; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: 6px; color: var(--ink); background: var(--white); cursor: pointer; font-size: 10px; font-weight: 750; }
+.modal-copy { padding: 30px 40px 21px; text-align: center; }
+.modal-copy > p { margin: 0 0 9px; color: var(--muted); font: 700 9px var(--mono); letter-spacing: .14em; }
+.modal-copy h2 { margin: 0; font: 750 34px/1.05 var(--display); letter-spacing: -.04em; }
+.modal-copy > span { display: block; max-width: 420px; margin: 13px auto 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.modal-provider-list { display: grid; gap: 10px; padding: 0 40px; }
+.modal-provider-list button { min-height: 50px; display: grid; grid-template-columns: 28px 1fr 28px; align-items: center; padding: 0 16px; border: 1px solid var(--line-strong); border-radius: 7px; color: var(--ink); background: var(--white); cursor: pointer; font-size: 13px; font-weight: 750; }
 .modal-provider-list button::after { content: "→"; color: var(--muted); font-family: var(--mono); }
 .modal-provider-list button:hover:not(:disabled) { border-color: var(--ink); background: var(--surface); }
 .modal-provider-list button:disabled { opacity: .5; cursor: wait; }
 .modal-provider-list button > svg { justify-self: center; }
-.modal-security-note { display: flex; align-items: flex-start; gap: 9px; margin: 18px 32px 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.modal-cloud-status { min-height: 34px; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 7px 40px 0; color: var(--muted); }
+.modal-cloud-status > span { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--muted); }
+.modal-cloud-status p { margin: 0; font: 10px/1.35 var(--mono); }
+.modal-cloud-status.checking > span { animation: pulse .75s ease-in-out infinite alternate; }
+.modal-cloud-status.available > span { background: var(--green); }
+.modal-cloud-status.unavailable { color: var(--danger); }
+.modal-cloud-status.unavailable > span { background: var(--danger); }
+.modal-divider { display: flex; align-items: center; gap: 12px; margin: 16px 40px 15px; color: var(--muted); font: 8px var(--mono); letter-spacing: .11em; }
+.modal-divider::before, .modal-divider::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+.modal-divider span { flex: 0 0 auto; }
+.modal-sign-in-form { display: grid; gap: 9px; padding: 0 40px; }
+.modal-sign-in-form > label { font-size: 12px; font-weight: 700; }
+.modal-sign-in-form > div { height: 48px; display: grid; grid-template-columns: 48px 1fr; align-items: center; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--white); }
+.modal-sign-in-form > div:focus-within { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.modal-sign-in-form svg { margin: auto; color: var(--muted); }
+.modal-sign-in-form input { min-width: 0; height: 100%; padding: 1px 14px 0; border: 0; border-left: 1px solid var(--line); outline: 0; font-size: 15px; line-height: 1.2; }
+.modal-sign-in-form > button { min-height: 47px; margin-top: 3px; border: 1px solid var(--ink); border-radius: 7px; color: var(--white); background: var(--ink); cursor: pointer; font-size: 13px; font-weight: 750; }
+.modal-sign-in-form > button:hover { background: #2b2b2b; }
+.modal-sign-in-form > button:disabled { opacity: .55; cursor: wait; }
+.modal-security-note { display: flex; align-items: flex-start; gap: 10px; margin: 18px 40px 0; padding: 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
 .modal-security-note svg { flex: 0 0 auto; color: var(--green); }
-.modal-security-note p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
-.modal-error { width: calc(100% - 64px); margin: 10px 32px 0; padding: 9px; border: 1px solid var(--danger); border-radius: 5px; color: var(--danger); background: #fff2f0; cursor: pointer; font-size: 9px; }
-.modal-error small { display: block; margin-top: 3px; color: var(--muted); font: 7px var(--mono); }
-.modal-continue-offline { width: 100%; min-height: 48px; margin-top: 14px; border: 0; border-top: 1px solid var(--line); color: var(--muted); background: transparent; cursor: pointer; font-size: 9px; }
+.modal-security-note p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.modal-error { width: calc(100% - 80px); margin: 10px 40px 0; padding: 10px; border: 1px solid var(--danger); border-radius: 6px; color: var(--danger); background: #fff2f0; cursor: pointer; font-size: 11px; }
+.modal-error small { display: block; margin-top: 4px; color: var(--muted); font: 8px var(--mono); }
+.modal-continue-offline { width: 100%; min-height: 52px; margin-top: 15px; border: 0; border-top: 1px solid var(--line); color: var(--muted); background: transparent; cursor: pointer; font-size: 11px; }
 .modal-continue-offline:hover { color: var(--ink); background: var(--surface); }
-.sign-in-success { display: grid; justify-items: center; padding: 38px 38px 42px; text-align: center; }
-.sign-in-success > span { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; color: var(--green); background: #edf7f1; }
-.sign-in-success h2 { margin: 18px 0 7px; font: 750 27px var(--display); letter-spacing: -.035em; }
-.sign-in-success p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
-.sign-in-success > button { width: 100%; margin-top: 24px; }
 
 .inspector-field { display: grid; gap: 7px; margin-bottom: 14px; font-size: 10px; font-weight: 700; }
 .inspector-field > span { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
@@ -402,6 +407,18 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .topbar { grid-template-columns: 318px 1fr auto; }
   .canvas-stage { padding-inline: 24px; }
   .ai-button { display: none !important; }
+}
+@media (max-width: 600px) {
+  .modal-backdrop { align-items: end; padding: 12px; }
+  .sign-in-modal { max-height: calc(100vh - 24px); border-radius: 10px; }
+  .modal-copy { padding: 24px 24px 18px; }
+  .modal-copy h2 { font-size: 30px; }
+  .modal-copy > span { font-size: 13px; }
+  .modal-provider-list, .modal-sign-in-form { padding-inline: 24px; }
+  .modal-cloud-status { padding-inline: 24px; }
+  .modal-divider { margin-inline: 24px; }
+  .modal-security-note { margin-inline: 24px; }
+  .modal-error { width: calc(100% - 48px); margin-inline: 24px; }
 }
 @media (prefers-reduced-motion: no-preference) {
   button { transition: background-color 120ms ease, color 120ms ease, transform 120ms ease, translate 120ms ease; }

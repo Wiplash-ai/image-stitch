@@ -66,6 +66,29 @@ try {
       }),
     });
   });
+  await page.route("http://127.0.0.1:3010/**", async (route) => {
+    if (route.request().method() === "OPTIONS") {
+      await route.fulfill({
+        status: 204,
+        headers: {
+          "access-control-allow-origin": baseUrl,
+          "access-control-allow-credentials": "true",
+          "access-control-allow-headers": "content-type,x-glassware-csrf",
+          "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
+        },
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: {
+        "access-control-allow-origin": baseUrl,
+        "access-control-allow-credentials": "true",
+      },
+      body: JSON.stringify({ account: null, connections: [], syncEnabled: false, csrfToken: "smoke-csrf" }),
+    });
+  });
   const browserErrors = [];
   page.on("console", (message) => {
     if (message.type() === "error") browserErrors.push(`console: ${message.text()}`);
@@ -241,10 +264,26 @@ try {
   assert(projectBundle.project.objects.find((object) => object.text === "Inline canvas headline"), "Portable projects should retain inline canvas text edits");
 
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  const signInDialog = page.getByRole("dialog", { name: "Make this editor yours" });
+  const signInDialog = page.getByRole("dialog", { name: "Sign in to GlassWare" });
   await signInDialog.waitFor();
+  for (const provider of ["Continue with Google", "Continue with GitHub", "Continue with Wiplash"]) {
+    assert(await signInDialog.getByRole("button", { name: provider }).isVisible(), `${provider} should always be visible in the sign-in modal`);
+  }
+  assert(await signInDialog.getByRole("status").innerText() === "Wiplash sign-in is ready", "The modal should disclose cloud sign-in readiness");
+  const emailInput = signInDialog.getByLabel("Email for this browser");
+  const emailMetrics = await emailInput.evaluate((element) => {
+    const field = element.parentElement;
+    const inputBox = element.getBoundingClientRect();
+    const fieldBox = field.getBoundingClientRect();
+    return {
+      fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+      centerDelta: Math.abs((inputBox.top + inputBox.height / 2) - (fieldBox.top + fieldBox.height / 2)),
+    };
+  });
+  assert(emailMetrics.fontSize >= 15, "The modal email input should use readable type");
+  assert(emailMetrics.centerDelta < 1, "The modal email input should be vertically centered in its field");
   await page.screenshot({ path: "artifacts/sign-in-modal-smoke.png", fullPage: true });
-  await signInDialog.getByLabel("Email address").fill("mom.example@example.com");
+  await emailInput.fill("mom.example@example.com");
   await signInDialog.getByRole("button", { name: "Continue on this device" }).click();
   await signInDialog.waitFor({ state: "detached" });
   assert(await page.getByRole("button", { name: "Mom Example", exact: true }).isVisible(), "The modal should establish the device profile and update the account control");
