@@ -148,8 +148,16 @@ try {
   await page.locator('input[type="file"][accept^="image/"]').setInputFiles({ name: "smoke.png", mimeType: "image/png", buffer: png });
   await page.getByRole("button", { name: "Images", exact: true }).click();
   assert(await page.getByRole("button", { name: "Upload from computer" }).isVisible(), "Images should keep local upload visible");
+  const searchGroup = page.locator(".image-search-form");
+  const searchGroupStyle = await searchGroup.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { radius: Number.parseFloat(style.borderRadius), columns: style.gridTemplateColumns };
+  });
+  assert(searchGroupStyle.radius >= 8 && searchGroupStyle.radius < 16, "Image search should use rounded group corners without becoming a pill");
+  assert(searchGroupStyle.columns.split(" ").length === 2, "Image search should group the query field and action into two joined chambers");
+  assert(await searchGroup.getByRole("button", { name: "Search" }).innerText() === "Search", "Image search should use a clearly labeled action");
   await page.getByLabel("Search open images").fill("flowers");
-  await page.locator(".image-search-form").getByRole("button", { name: "Search" }).click();
+  await searchGroup.getByRole("button", { name: "Search" }).click();
   await page.getByText("Open flower", { exact: true }).waitFor();
   await page.screenshot({ path: "artifacts/image-search-smoke.png", fullPage: true });
   await page.getByRole("button", { name: "Add Open flower" }).click();

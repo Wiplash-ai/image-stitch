@@ -1612,10 +1612,15 @@ function ImagePanel({
       </button>
       <div className="image-search-section">
         <div className="section-label"><span>Search open images</span><small>OPENVERSE</small></div>
-        <form className="image-search-form" onSubmit={(event) => { event.preventDefault(); void searchImages(); }}>
-          <Search size={16} aria-hidden="true" />
-          <input aria-label="Search open images" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Flowers, sunsets, textures…" maxLength={200} />
-          <button aria-label="Search" disabled={!query.trim() || status === "searching"}>{status === "searching" ? <LoaderCircle className="spin" size={16} /> : <Search size={16} />}</button>
+        <form className="image-search-form" role="search" aria-label="Search Openverse images" onSubmit={(event) => { event.preventDefault(); void searchImages(); }}>
+          <label className="image-search-input">
+            <Search size={16} aria-hidden="true" />
+            <input type="search" aria-label="Search open images" autoComplete="off" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Flowers, sunsets, textures…" maxLength={200} />
+          </label>
+          <button type="submit" aria-label="Search" title="Search Openverse" disabled={!query.trim() || status === "searching"}>
+            {status === "searching" ? <LoaderCircle className="spin" size={15} /> : <Search size={15} />}
+            <span>Search</span>
+          </button>
         </form>
         {status === "idle" && (
           <div className="search-suggestions">
