@@ -21,12 +21,13 @@
     "canvas": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["preset", "width", "height", "background"],
+      "required": ["preset", "width", "height", "background", "presentation"],
       "properties": {
         "preset": { "enum": ["square", "portrait", "story", "landscape", "custom"] },
         "width": { "type": "integer", "minimum": 1, "maximum": 16384 },
         "height": { "type": "integer", "minimum": 1, "maximum": 16384 },
-        "background": { "type": "string", "minLength": 1, "maxLength": 128 }
+        "background": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "presentation": { "$ref": "#/$defs/artworkPresentation" }
       }
     },
     "designNode": {
@@ -54,11 +55,12 @@
         "fontStyle": { "type": "string", "minLength": 1, "maxLength": 80 },
         "align": { "enum": ["left", "center", "right"] },
         "lineHeight": { "type": "number", "exclusiveMinimum": 0 },
-        "shape": { "enum": ["rect", "rounded-rect", "ellipse", "triangle", "diamond", "pentagon", "hexagon", "star", "heart", "speech-bubble", "line", "arrow"] },
+        "shape": { "enum": ["rect", "rounded-rect", "ellipse", "triangle", "diamond", "pentagon", "hexagon", "star", "heart", "speech-bubble", "line", "arrow", "curved-arrow", "blur", "redact"] },
         "cornerRadius": { "type": "number", "minimum": 0 },
         "assetId": { "type": "string", "format": "uuid" },
         "crop": { "$ref": "#/$defs/crop" },
-        "adjustments": { "$ref": "#/$defs/imageAdjustments" }
+        "adjustments": { "$ref": "#/$defs/imageAdjustments" },
+        "presentation": { "$ref": "#/$defs/imagePresentation" }
       },
       "allOf": [
         {
@@ -97,6 +99,90 @@
         "blur": { "type": "number", "minimum": 0, "maximum": 40 },
         "grayscale": { "type": "boolean" },
         "sepia": { "type": "boolean" }
+      }
+    },
+    "imagePresentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cornerRadius", "frame", "shadow"],
+      "properties": {
+        "cornerRadius": { "type": "number", "minimum": 0, "maximum": 500 },
+        "frame": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "width", "color", "opacity", "padding", "title"],
+          "properties": {
+            "type": { "enum": ["none", "arc-light", "arc-dark", "macos-light", "macos-dark", "windows-light", "windows-dark", "photograph", "glass-light", "glass-dark", "outline-light", "border-light", "border-dark"] },
+            "width": { "type": "number", "minimum": 0, "maximum": 64 },
+            "color": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+            "padding": { "type": "number", "minimum": 0, "maximum": 256 },
+            "title": { "type": "string", "maxLength": 240 }
+          }
+        },
+        "shadow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "color", "blur", "offsetX", "offsetY", "opacity"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "color": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "blur": { "type": "number", "minimum": 0, "maximum": 200 },
+            "offsetX": { "type": "number", "minimum": -200, "maximum": 200 },
+            "offsetY": { "type": "number", "minimum": -200, "maximum": 200 },
+            "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    },
+    "artworkPresentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "padding", "background", "backdrop", "cornerRadius", "frame", "shadow"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "padding": { "type": "number", "minimum": 0, "maximum": 4096 },
+        "background": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "backdrop": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "value", "opacity", "blur", "noise"],
+          "properties": {
+            "type": { "enum": ["solid", "gradient", "image"] },
+            "value": { "type": "string", "minLength": 1, "maxLength": 240 },
+            "assetId": { "type": "string", "format": "uuid" },
+            "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+            "blur": { "type": "number", "minimum": 0, "maximum": 100 },
+            "noise": { "type": "number", "minimum": 0, "maximum": 100 }
+          }
+        },
+        "cornerRadius": { "type": "number", "minimum": 0, "maximum": 500 },
+        "frame": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "width", "color", "opacity", "padding", "title"],
+          "properties": {
+            "type": { "enum": ["none", "arc-light", "arc-dark", "macos-light", "macos-dark", "windows-light", "windows-dark", "photograph", "glass-light", "glass-dark", "outline-light", "border-light", "border-dark"] },
+            "width": { "type": "number", "minimum": 0, "maximum": 64 },
+            "color": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+            "padding": { "type": "number", "minimum": 0, "maximum": 256 },
+            "title": { "type": "string", "maxLength": 240 }
+          }
+        },
+        "shadow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "color", "blur", "offsetX", "offsetY", "opacity"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "color": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "blur": { "type": "number", "minimum": 0, "maximum": 200 },
+            "offsetX": { "type": "number", "minimum": -200, "maximum": 200 },
+            "offsetY": { "type": "number", "minimum": -200, "maximum": 200 },
+            "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
       }
     },
     "snapshot": {

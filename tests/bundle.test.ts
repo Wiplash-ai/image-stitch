@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
-import { createProject } from "../src/lib/model";
+import { cloneImagePresentation, createProject } from "../src/lib/model";
 import { readProjectBundle } from "../src/lib/bundle";
 import { resetStorageForTests } from "../src/lib/storage";
 
@@ -19,6 +19,7 @@ describe("portable project bundles", () => {
       assetId,
       crop: { x: 0, y: 0, width: 1, height: 1 },
       adjustments: { brightness: 0, contrast: 0, saturation: 0, blur: 0, grayscale: false, sepia: false },
+      presentation: cloneImagePresentation(),
       x: 0,
       y: 0,
       width: 1,

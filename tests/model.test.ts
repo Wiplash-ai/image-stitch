@@ -9,6 +9,8 @@ import {
   setCanvasPreset,
   undoProject,
   SHAPE_KINDS,
+  cloneImagePresentation,
+  cloneArtworkPresentation,
 } from "../src/lib/model";
 
 describe("GlassWare project model", () => {
@@ -67,6 +69,7 @@ describe("GlassWare project model", () => {
       currentRevisionId: "legacy-revision",
     });
     expect(recovered?.canvas.background).toBe("#ffffff");
+    expect(recovered?.canvas.presentation).toEqual(cloneArtworkPresentation());
     expect(recovered?.revisions[0].snapshot.objects).toEqual([]);
   });
 
@@ -93,6 +96,102 @@ describe("GlassWare project model", () => {
       kind: "image",
       crop: { x: 0, y: 0, width: 1, height: 1 },
       adjustments: { brightness: 0, contrast: 0, saturation: 0, blur: 0, grayscale: false, sepia: false },
+      presentation: cloneImagePresentation(),
+    });
+  });
+
+  it("keeps image presentation settings inside revision snapshots", () => {
+    const project = createProject("Presentation history", false);
+    const image = {
+      id: crypto.randomUUID(), kind: "image" as const, name: "Screenshot", assetId: crypto.randomUUID(),
+      x: 0, y: 0, width: 800, height: 500, rotation: 0, scaleX: 1, scaleY: 1,
+      opacity: 1, visible: true, locked: false,
+      crop: { x: 0, y: 0, width: 1, height: 1 },
+      adjustments: { brightness: 0, contrast: 0, saturation: 0, blur: 0, grayscale: false, sepia: false },
+      presentation: cloneImagePresentation(),
+    };
+    const added = commitSnapshot(project, "Image added", { canvas: project.canvas, objects: [image] });
+    const styled = commitSnapshot(added, "Soft shadow", {
+      canvas: added.canvas,
+      objects: [{ ...image, presentation: { ...image.presentation, shadow: { ...image.presentation.shadow, enabled: true, blur: 48 } } }],
+    });
+    expect(styled.objects[0]).toMatchObject({ presentation: { shadow: { enabled: true, blur: 48 } } });
+    expect(undoProject(styled).objects[0]).toMatchObject({ presentation: { shadow: { enabled: false } } });
+    expect(redoProject(undoProject(styled)).objects[0]).toMatchObject({ presentation: { shadow: { enabled: true, blur: 48 } } });
+  });
+
+  it("keeps whole-artwork presentation settings inside revision snapshots", () => {
+    const project = createProject("Artwork presentation", false);
+    const styled = commitSnapshot(project, "Whole artwork floated", {
+      canvas: {
+        ...project.canvas,
+        presentation: {
+          ...cloneArtworkPresentation(project.canvas.presentation),
+          enabled: true,
+          padding: 96,
+          background: "#c8d8ff",
+        },
+      },
+      objects: project.objects,
+    });
+
+    expect(styled.canvas.presentation).toMatchObject({ enabled: true, padding: 96, background: "#c8d8ff" });
+    expect(undoProject(styled).canvas.presentation.enabled).toBe(false);
+    expect(redoProject(undoProject(styled)).canvas.presentation.padding).toBe(96);
+    expect(setCanvasPreset(styled, "story").canvas.presentation).toMatchObject({ enabled: true, padding: 96 });
+  });
+
+  it("keeps rich artwork backdrops inside revision history", () => {
+    const project = createProject("Gradient artwork", false);
+    const styled = commitSnapshot(project, "Backdrop changed", {
+      canvas: {
+        ...project.canvas,
+        presentation: {
+          ...cloneArtworkPresentation(project.canvas.presentation),
+          enabled: true,
+          backdrop: {
+            type: "gradient",
+            value: "daybreak",
+            opacity: 0.9,
+            blur: 0,
+            noise: 12,
+          },
+        },
+      },
+      objects: project.objects,
+    });
+
+    expect(styled.canvas.presentation.backdrop).toEqual({
+      type: "gradient",
+      value: "daybreak",
+      opacity: 0.9,
+      blur: 0,
+      noise: 12,
+    });
+    expect(undoProject(styled).canvas.presentation.backdrop.value).toBe("#dedede");
+    expect(redoProject(undoProject(styled)).canvas.presentation.backdrop.value).toBe("daybreak");
+  });
+
+  it("migrates legacy frame and artwork background settings", () => {
+    const project = createProject("Legacy presentation", false);
+    const recovered = normalizeProject({
+      ...project,
+      canvas: {
+        ...project.canvas,
+        presentation: {
+          enabled: true,
+          padding: 40,
+          background: "#123456",
+          frame: { type: "outline-dark", width: 3, color: "#111111" },
+          shadow: project.canvas.presentation.shadow,
+        },
+      },
+    });
+
+    expect(recovered?.canvas.presentation).toMatchObject({
+      background: "#123456",
+      backdrop: { type: "solid", value: "#123456", opacity: 1, blur: 0, noise: 0 },
+      frame: { type: "border-dark", width: 3, color: "#111111", padding: 0, title: "" },
     });
   });
 

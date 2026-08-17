@@ -5,6 +5,7 @@ export interface CanvasSettings {
   width: number;
   height: number;
   background: string;
+  presentation: ArtworkPresentation;
 }
 
 export interface BaseDesignNode {
@@ -46,6 +47,9 @@ export const SHAPE_KINDS = [
   "speech-bubble",
   "line",
   "arrow",
+  "curved-arrow",
+  "blur",
+  "redact",
 ] as const;
 
 export type ShapeKind = (typeof SHAPE_KINDS)[number];
@@ -62,6 +66,7 @@ export interface ImageDesignNode extends BaseDesignNode {
   assetId: string;
   crop: NormalizedCrop;
   adjustments: ImageAdjustments;
+  presentation: ImagePresentation;
 }
 
 export interface NormalizedCrop {
@@ -78,6 +83,68 @@ export interface ImageAdjustments {
   blur: number;
   grayscale: boolean;
   sepia: boolean;
+}
+
+export const IMAGE_FRAME_TYPES = [
+  "none",
+  "arc-light",
+  "arc-dark",
+  "macos-light",
+  "macos-dark",
+  "windows-light",
+  "windows-dark",
+  "photograph",
+  "glass-light",
+  "glass-dark",
+  "outline-light",
+  "border-light",
+  "border-dark",
+] as const;
+
+export type ImageFrameType = (typeof IMAGE_FRAME_TYPES)[number];
+
+export interface ImageFrame {
+  type: ImageFrameType;
+  width: number;
+  color: string;
+  opacity: number;
+  padding: number;
+  title: string;
+}
+
+export interface ImageShadow {
+  enabled: boolean;
+  color: string;
+  blur: number;
+  offsetX: number;
+  offsetY: number;
+  opacity: number;
+}
+
+export interface ImagePresentation {
+  cornerRadius: number;
+  frame: ImageFrame;
+  shadow: ImageShadow;
+}
+
+export const ARTWORK_BACKDROP_TYPES = ["solid", "gradient", "image"] as const;
+
+export type ArtworkBackdropType = (typeof ARTWORK_BACKDROP_TYPES)[number];
+
+export interface ArtworkBackdrop {
+  type: ArtworkBackdropType;
+  value: string;
+  assetId?: string;
+  opacity: number;
+  blur: number;
+  noise: number;
+}
+
+export interface ArtworkPresentation extends ImagePresentation {
+  enabled: boolean;
+  padding: number;
+  background: string;
+  backdrop: ArtworkBackdrop;
 }
 
 export type DesignNode = TextDesignNode | ShapeDesignNode | ImageDesignNode;
@@ -119,12 +186,87 @@ export const DEFAULT_IMAGE_ADJUSTMENTS: ImageAdjustments = {
   grayscale: false,
   sepia: false,
 };
+export const DEFAULT_IMAGE_PRESENTATION: ImagePresentation = {
+  cornerRadius: 0,
+  frame: {
+    type: "none",
+    width: 0,
+    color: "#111111",
+    opacity: 1,
+    padding: 0,
+    title: "",
+  },
+  shadow: {
+    enabled: false,
+    color: "#111111",
+    blur: 24,
+    offsetX: 0,
+    offsetY: 8,
+    opacity: 0.24,
+  },
+};
+
+export const DEFAULT_ARTWORK_PRESENTATION: ArtworkPresentation = {
+  enabled: false,
+  padding: 72,
+  background: "#dedede",
+  backdrop: {
+    type: "solid",
+    value: "#dedede",
+    opacity: 1,
+    blur: 0,
+    noise: 0,
+  },
+  cornerRadius: 18,
+  frame: {
+    type: "none",
+    width: 0,
+    color: "#111111",
+    opacity: 1,
+    padding: 0,
+    title: "",
+  },
+  shadow: {
+    enabled: true,
+    color: "#111111",
+    blur: 48,
+    offsetX: 0,
+    offsetY: 12,
+    opacity: 0.28,
+  },
+};
+
+export function cloneImagePresentation(
+  presentation: ImagePresentation = DEFAULT_IMAGE_PRESENTATION,
+): ImagePresentation {
+  return {
+    cornerRadius: presentation.cornerRadius,
+    frame: { ...presentation.frame },
+    shadow: { ...presentation.shadow },
+  };
+}
+
+export function cloneArtworkPresentation(
+  presentation: ArtworkPresentation = DEFAULT_ARTWORK_PRESENTATION,
+): ArtworkPresentation {
+  return {
+    enabled: presentation.enabled,
+    padding: presentation.padding,
+    background: presentation.background,
+    backdrop: { ...presentation.backdrop },
+    ...cloneImagePresentation(presentation),
+  };
+}
+
+function cloneCanvasSettings(canvas: CanvasSettings): CanvasSettings {
+  return { ...canvas, presentation: cloneArtworkPresentation(canvas.presentation) };
+}
 
 export const CANVAS_PRESETS: Record<Exclude<CanvasPreset, "custom">, CanvasSettings> = {
-  square: { preset: "square", width: 1080, height: 1080, background: DEFAULT_BACKGROUND },
-  portrait: { preset: "portrait", width: 1080, height: 1350, background: DEFAULT_BACKGROUND },
-  story: { preset: "story", width: 1080, height: 1920, background: DEFAULT_BACKGROUND },
-  landscape: { preset: "landscape", width: 1200, height: 628, background: DEFAULT_BACKGROUND },
+  square: { preset: "square", width: 1080, height: 1080, background: DEFAULT_BACKGROUND, presentation: cloneArtworkPresentation() },
+  portrait: { preset: "portrait", width: 1080, height: 1350, background: DEFAULT_BACKGROUND, presentation: cloneArtworkPresentation() },
+  story: { preset: "story", width: 1080, height: 1920, background: DEFAULT_BACKGROUND, presentation: cloneArtworkPresentation() },
+  landscape: { preset: "landscape", width: 1200, height: 628, background: DEFAULT_BACKGROUND, presentation: cloneArtworkPresentation() },
 };
 
 const now = () => new Date().toISOString();
@@ -132,9 +274,14 @@ export const newId = () => crypto.randomUUID();
 
 function cloneSnapshot(snapshot: ProjectSnapshot): ProjectSnapshot {
   return {
-    canvas: { ...snapshot.canvas },
+    canvas: cloneCanvasSettings(snapshot.canvas),
     objects: snapshot.objects.map((object) => object.kind === "image"
-      ? { ...object, crop: { ...object.crop }, adjustments: { ...object.adjustments } }
+      ? {
+          ...object,
+          crop: { ...object.crop },
+          adjustments: { ...object.adjustments },
+          presentation: cloneImagePresentation(object.presentation),
+        }
       : { ...object }),
   };
 }
@@ -210,7 +357,7 @@ export function createProject(name = "Untitled stitch", starter = true): GlassWa
   const createdAt = now();
   const revisionId = newId();
   const snapshot: ProjectSnapshot = {
-    canvas: { ...CANVAS_PRESETS.square },
+    canvas: cloneCanvasSettings(CANVAS_PRESETS.square),
     objects: starter ? createStarterObjects() : [],
   };
   return {
@@ -303,12 +450,89 @@ export function setCanvasPreset(
   project: GlassWareProject,
   preset: Exclude<CanvasPreset, "custom">,
 ): GlassWareProject {
-  const canvas = { ...CANVAS_PRESETS[preset], background: project.canvas.background };
+  const canvas = {
+    ...cloneCanvasSettings(CANVAS_PRESETS[preset]),
+    background: project.canvas.background,
+    presentation: cloneArtworkPresentation(project.canvas.presentation),
+  };
   return commitSnapshot(project, `Canvas set to ${preset}`, { canvas, objects: project.objects });
 }
 
 function finiteNumber(value: unknown, minimum = -Infinity, maximum = Infinity): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= minimum && value <= maximum;
+}
+
+function normalizeImagePresentation(
+  value: unknown,
+  fallback: ImagePresentation = DEFAULT_IMAGE_PRESENTATION,
+): ImagePresentation {
+  const presentationValue = value as Partial<ImagePresentation> | undefined;
+  const frameValue = presentationValue?.frame as Partial<ImageFrame> | undefined;
+  const shadowValue = presentationValue?.shadow as Partial<ImageShadow> | undefined;
+  const frameType = (frameValue?.type as string | undefined) === "outline-dark"
+    ? "border-dark"
+    : frameValue?.type;
+  return {
+    cornerRadius: finiteNumber(presentationValue?.cornerRadius, 0, 500)
+      ? presentationValue.cornerRadius
+      : fallback.cornerRadius,
+    frame: frameValue && IMAGE_FRAME_TYPES.includes(frameType as ImageFrameType)
+      ? {
+          type: frameType as ImageFrameType,
+          width: finiteNumber(frameValue.width, 0, 64) ? frameValue.width : fallback.frame.width,
+          color: typeof frameValue.color === "string" && frameValue.color ? frameValue.color : fallback.frame.color,
+          opacity: finiteNumber(frameValue.opacity, 0, 1) ? frameValue.opacity : fallback.frame.opacity,
+          padding: finiteNumber(frameValue.padding, 0, 256) ? frameValue.padding : fallback.frame.padding,
+          title: typeof frameValue.title === "string" ? frameValue.title.slice(0, 240) : fallback.frame.title,
+        }
+      : { ...fallback.frame },
+    shadow: shadowValue &&
+      typeof shadowValue.enabled === "boolean" &&
+      typeof shadowValue.color === "string" && shadowValue.color &&
+      finiteNumber(shadowValue.blur, 0, 200) &&
+      finiteNumber(shadowValue.offsetX, -200, 200) &&
+      finiteNumber(shadowValue.offsetY, -200, 200) &&
+      finiteNumber(shadowValue.opacity, 0, 1)
+      ? {
+          enabled: shadowValue.enabled,
+          color: shadowValue.color,
+          blur: shadowValue.blur,
+          offsetX: shadowValue.offsetX,
+          offsetY: shadowValue.offsetY,
+          opacity: shadowValue.opacity,
+        }
+      : { ...fallback.shadow },
+  };
+}
+
+function normalizeArtworkPresentation(value: unknown): ArtworkPresentation {
+  const presentation = value as Partial<ArtworkPresentation> | undefined;
+  const style = normalizeImagePresentation(value, DEFAULT_ARTWORK_PRESENTATION);
+  const legacyBackground = typeof presentation?.background === "string" && presentation.background
+    ? presentation.background
+    : DEFAULT_ARTWORK_PRESENTATION.background;
+  const backdropValue = presentation?.backdrop as Partial<ArtworkBackdrop> | undefined;
+  const backdropType = ARTWORK_BACKDROP_TYPES.includes(backdropValue?.type as ArtworkBackdropType)
+    ? backdropValue!.type!
+    : "solid";
+  return {
+    enabled: typeof presentation?.enabled === "boolean" ? presentation.enabled : DEFAULT_ARTWORK_PRESENTATION.enabled,
+    padding: finiteNumber(presentation?.padding, 0, 4096) ? presentation.padding : DEFAULT_ARTWORK_PRESENTATION.padding,
+    background: legacyBackground,
+    backdrop: {
+      type: backdropType,
+      value: typeof backdropValue?.value === "string" && backdropValue.value
+        ? backdropValue.value
+        : legacyBackground,
+      ...(typeof backdropValue?.assetId === "string" && backdropValue.assetId
+        ? { assetId: backdropValue.assetId }
+        : {}),
+      opacity: finiteNumber(backdropValue?.opacity, 0, 1) ? backdropValue.opacity : 1,
+      blur: finiteNumber(backdropValue?.blur, 0, 100) ? backdropValue.blur : 0,
+      noise: finiteNumber(backdropValue?.noise, 0, 100) ? backdropValue.noise : 0,
+    },
+    ...style,
+  };
 }
 
 function normalizeDesignNode(value: unknown): DesignNode | null {
@@ -374,7 +598,8 @@ function normalizeDesignNode(value: unknown): DesignNode | null {
           sepia: adjustmentValue.sepia,
         }
       : { ...DEFAULT_IMAGE_ADJUSTMENTS };
-    return { ...common, kind: "image", assetId: node.assetId, crop, adjustments };
+    const presentation = normalizeImagePresentation(node.presentation);
+    return { ...common, kind: "image", assetId: node.assetId, crop, adjustments, presentation };
   }
   return null;
 }
@@ -398,6 +623,7 @@ function normalizeCanvas(value: unknown): CanvasSettings | null {
     width: canvas.width,
     height: canvas.height,
     background: typeof canvas.background === "string" && canvas.background ? canvas.background : DEFAULT_BACKGROUND,
+    presentation: normalizeArtworkPresentation(canvas.presentation),
   };
 }
 

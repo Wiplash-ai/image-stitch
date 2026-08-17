@@ -2,9 +2,29 @@ export const ACCOUNT_DEVICE_STORAGE_KEY = "glassware.device-account.v1";
 const LEGACY_ACCOUNT_STORAGE_KEYS = ["imagestitch.device-account.v1", "imagestitch.account-preview.v1", "glassware.account-preview.v1"] as const;
 
 export type AccountClientMode = "service" | "device";
-export type SignInProvider = "wiplash" | "google" | "github";
+export type SignInProvider = "wiplash";
 export type AiConnectionKind = "chatgpt_codex_plugin" | "openai_api";
 export type AiConnectionStatus = "connected" | "attention";
+export type AiAuthorizationStatus = "starting" | "waiting" | "connected" | "failed" | "expired";
+export type AiJobStatus = "queued" | "running" | "completed" | "failed";
+export type AiModelId = "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-5.6-sol";
+export type AiReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max";
+
+export const DEFAULT_AI_MODEL: AiModelId = "gpt-5.6-luna";
+export const DEFAULT_AI_REASONING_EFFORT: AiReasoningEffort = "medium";
+export const AI_MODEL_CATALOG: ReadonlyArray<{ id: AiModelId; name: string; detail: string }> = [
+  { id: "gpt-5.6-luna", name: "GPT-5.6 Luna", detail: "Latest Luna · efficient creative work" },
+  { id: "gpt-5.6-terra", name: "GPT-5.6 Terra", detail: "Balanced intelligence and cost" },
+  { id: "gpt-5.6-sol", name: "GPT-5.6 Sol", detail: "Frontier quality" },
+] as const;
+export const AI_REASONING_EFFORTS: ReadonlyArray<{ id: AiReasoningEffort; name: string }> = [
+  { id: "none", name: "None" },
+  { id: "low", name: "Low" },
+  { id: "medium", name: "Medium" },
+  { id: "high", name: "High" },
+  { id: "xhigh", name: "Extra high" },
+  { id: "max", name: "Maximum" },
+] as const;
 
 export interface AccountSession {
   id: string;
@@ -28,19 +48,60 @@ export interface AccountSnapshot {
   connections: AiConnection[];
   syncEnabled: boolean;
   csrfToken?: string;
-}
-
-export interface MagicLinkReceipt {
-  status: "email-sent" | "device-session";
-  email: string;
-  expiresAt: string;
-  snapshot?: AccountSnapshot;
+  aiRuntime: {
+    available: boolean;
+    message: string;
+  };
 }
 
 export interface ConnectionAuthorization {
-  status: "redirect" | "connected";
-  authorizationUrl?: string;
+  status: "device" | "connected";
+  authorization?: AiDeviceAuthorization;
   snapshot?: AccountSnapshot;
+}
+
+export interface AiDeviceAuthorization {
+  id: string;
+  status: AiAuthorizationStatus;
+  createdAt: string;
+  expiresAt: string;
+  verificationUrl?: string;
+  userCode?: string;
+  error?: string;
+}
+
+export interface AiPlanOperation {
+  action: "set_canvas_background" | "add_text" | "add_shape" | "update_object";
+  label: string;
+  targetId: string | null;
+  text: string | null;
+  color: string | null;
+  shape: string | null;
+  align: string | null;
+  x: number | null;
+  y: number | null;
+  width: number | null;
+  height: number | null;
+  fontSize: number | null;
+}
+
+export interface AiEditPlan {
+  summary: string;
+  rationale: string;
+  operations: AiPlanOperation[];
+}
+
+export interface AiJob {
+  id: string;
+  status: AiJobStatus;
+  connectionId: string;
+  model: AiModelId;
+  reasoningEffort: AiReasoningEffort;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  plan?: AiEditPlan;
+  error?: string;
 }
 
 export interface SignInAuthorization {
@@ -51,11 +112,14 @@ export interface SignInAuthorization {
 export interface AccountConnectionsClient {
   readonly mode: AccountClientMode;
   getSnapshot(): Promise<AccountSnapshot>;
-  requestMagicLink(email: string, returnUrl: string): Promise<MagicLinkReceipt>;
   startSignIn(provider: SignInProvider, returnUrl: string): Promise<SignInAuthorization>;
   signOut(): Promise<AccountSnapshot>;
-  startConnection(kind: AiConnectionKind, returnUrl: string, projectId?: string): Promise<ConnectionAuthorization>;
+  connectApiKey(apiKey: string, projectId?: string): Promise<AccountSnapshot>;
+  startChatGptConnection(projectId?: string): Promise<ConnectionAuthorization>;
+  getChatGptConnection(authorizationId: string): Promise<ConnectionAuthorization>;
   disconnectConnection(connectionId: string): Promise<AccountSnapshot>;
+  createAiJob(connectionId: string, prompt: string, project: unknown, model: AiModelId, reasoningEffort: AiReasoningEffort): Promise<AiJob>;
+  getAiJob(jobId: string): Promise<AiJob>;
   setSyncEnabled(enabled: boolean): Promise<AccountSnapshot>;
 }
 
@@ -82,18 +146,23 @@ export const AI_CONNECTION_CATALOG: ReadonlyArray<{
     eyebrow: "SUBSCRIPTION CONNECTION",
     name: "ChatGPT / Codex",
     description: "Let an authenticated ChatGPT or Codex client inspect the current project and propose reviewable edits through GlassWare tools.",
-    detail: "MCP plugin + project-scoped GlassWare OAuth",
+    detail: "Codex CLI device authorization · ChatGPT subscription access",
   },
   {
     kind: "openai_api",
     eyebrow: "USAGE-BASED CONNECTION",
     name: "OpenAI API key",
-    description: "Use separately billed OpenAI API access through an encrypted vault or future local companion. The editor receives only an opaque connection ID.",
-    detail: "Separate API billing · key never enters this browser UI",
+    description: "Use separately billed OpenAI API access. Your key crosses this form once over HTTPS, is encrypted server-side, and is never returned to the editor.",
+    detail: "Encrypted vault · separate API billing",
   },
 ] as const;
 
-const EMPTY_SNAPSHOT: AccountSnapshot = { account: null, connections: [], syncEnabled: false };
+const EMPTY_SNAPSHOT: AccountSnapshot = {
+  account: null,
+  connections: [],
+  syncEnabled: false,
+  aiRuntime: { available: false, message: "AI workspace is unavailable" },
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -121,6 +190,17 @@ function requireString(value: unknown, field: string): string {
 function optionalString(value: unknown, field: string): string | undefined {
   if (value === undefined || value === null) return undefined;
   return requireString(value, field);
+}
+
+function nullableString(value: unknown, field: string): string | null {
+  if (value === null) return null;
+  return requireString(value, field);
+}
+
+function nullableNumber(value: unknown, field: string): number | null {
+  if (value === null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`Account service returned an invalid ${field}.`);
+  return value;
 }
 
 function parseAccount(value: unknown): AccountSession | null {
@@ -163,13 +243,77 @@ export function parseAccountSnapshot(value: unknown): AccountSnapshot {
     connections: value.connections.map(parseConnection),
     syncEnabled: value.syncEnabled,
     csrfToken: optionalString(value.csrfToken, "CSRF token"),
+    aiRuntime: isRecord(value.aiRuntime) && typeof value.aiRuntime.available === "boolean" && typeof value.aiRuntime.message === "string"
+      ? { available: value.aiRuntime.available, message: value.aiRuntime.message }
+      : { available: false, message: "AI workspace is unavailable" },
   };
 }
 
-export function validateEmail(email: string): string {
-  const normalized = email.trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) throw new Error("Enter a valid email address.");
-  return normalized;
+function parseDeviceAuthorization(value: unknown): AiDeviceAuthorization {
+  if (!isRecord(value)) throw new Error("Account service returned an invalid ChatGPT authorization.");
+  const status = value.status;
+  if (!new Set(["starting", "waiting", "connected", "failed", "expired"]).has(String(status))) {
+    throw new Error("Account service returned an invalid ChatGPT authorization status.");
+  }
+  const verificationUrl = optionalString(value.verificationUrl, "verification URL");
+  const userCode = optionalString(value.userCode, "device code");
+  return {
+    id: requireString(value.id, "authorization id"),
+    status: status as AiAuthorizationStatus,
+    createdAt: requireString(value.createdAt, "authorization creation time"),
+    expiresAt: requireString(value.expiresAt, "authorization expiry"),
+    ...(verificationUrl ? { verificationUrl: validateAuthorizationUrl(verificationUrl) } : {}),
+    ...(userCode ? { userCode } : {}),
+    ...(value.error ? { error: requireString(value.error, "authorization error") } : {}),
+  };
+}
+
+function parsePlan(value: unknown): AiEditPlan {
+  if (!isRecord(value) || !Array.isArray(value.operations)) throw new Error("Account service returned an invalid AI edit plan.");
+  const actions = new Set(["set_canvas_background", "add_text", "add_shape", "update_object"]);
+  return {
+    summary: requireString(value.summary, "plan summary"),
+    rationale: requireString(value.rationale, "plan rationale"),
+    operations: value.operations.map((operation) => {
+      if (!isRecord(operation) || !actions.has(String(operation.action))) throw new Error("Account service returned an unknown AI edit operation.");
+      return {
+        action: operation.action as AiPlanOperation["action"],
+        label: requireString(operation.label, "operation label"),
+        targetId: nullableString(operation.targetId, "operation target"),
+        text: nullableString(operation.text, "operation text"),
+        color: nullableString(operation.color, "operation color"),
+        shape: nullableString(operation.shape, "operation shape"),
+        align: nullableString(operation.align, "operation alignment"),
+        x: nullableNumber(operation.x, "operation x coordinate"),
+        y: nullableNumber(operation.y, "operation y coordinate"),
+        width: nullableNumber(operation.width, "operation width"),
+        height: nullableNumber(operation.height, "operation height"),
+        fontSize: nullableNumber(operation.fontSize, "operation font size"),
+      };
+    }),
+  };
+}
+
+function parseAiJob(value: unknown): AiJob {
+  if (!isRecord(value)) throw new Error("Account service returned an invalid AI job.");
+  const status = value.status;
+  if (!new Set(["queued", "running", "completed", "failed"]).has(String(status))) throw new Error("Account service returned an invalid AI job status.");
+  const model = String(value.model || "");
+  const reasoningEffort = String(value.reasoningEffort || "");
+  if (!AI_MODEL_CATALOG.some((entry) => entry.id === model)) throw new Error("Account service returned an unsupported AI model.");
+  if (!AI_REASONING_EFFORTS.some((entry) => entry.id === reasoningEffort)) throw new Error("Account service returned an unsupported reasoning effort.");
+  return {
+    id: requireString(value.id, "AI job id"),
+    status: status as AiJobStatus,
+    connectionId: requireString(value.connectionId, "AI connection id"),
+    model: model as AiModelId,
+    reasoningEffort: reasoningEffort as AiReasoningEffort,
+    createdAt: requireString(value.createdAt, "AI job creation time"),
+    startedAt: optionalString(value.startedAt, "AI job start time"),
+    finishedAt: optionalString(value.finishedAt, "AI job finish time"),
+    plan: value.plan === undefined ? undefined : parsePlan(value.plan),
+    error: optionalString(value.error, "AI job error"),
+  };
 }
 
 export function validateServiceBaseUrl(value: string): string {
@@ -225,18 +369,6 @@ export function createAccountServiceClient(options: ServiceClientOptions): Accou
     async getSnapshot() {
       return rememberSnapshot(await request("/v1/account"));
     },
-    async requestMagicLink(email, returnUrl) {
-      const payload = await request("/v1/auth/magic-links", {
-        method: "POST",
-        body: JSON.stringify({ email: validateEmail(email), returnUrl }),
-      });
-      if (!isRecord(payload)) throw new Error("Account service returned an invalid sign-in receipt.");
-      return {
-        status: "email-sent",
-        email: requireString(payload.email, "sign-in email"),
-        expiresAt: requireString(payload.expiresAt, "sign-in expiry"),
-      };
-    },
     async startSignIn(provider, returnUrl) {
       const payload = await request("/v1/auth/authorizations", {
         method: "POST",
@@ -255,22 +387,49 @@ export function createAccountServiceClient(options: ServiceClientOptions): Accou
       csrfToken = snapshot.csrfToken ?? "";
       return snapshot;
     },
-    async startConnection(kind, returnUrl, projectId) {
-      const payload = await request(`/v1/connections/${kind}/authorizations`, {
+    async connectApiKey(apiKey, projectId) {
+      const payload = await request("/v1/connections/openai_api", {
         method: "POST",
-        body: JSON.stringify({ returnUrl, ...(projectId ? { projectId } : {}) }),
+        body: JSON.stringify({ apiKey, ...(projectId ? { projectId } : {}) }),
       });
-      if (!isRecord(payload) || (payload.status !== "redirect" && payload.status !== "connected")) {
-        throw new Error("Account service returned an invalid connection authorization.");
+      if (!isRecord(payload) || payload.status !== "connected" || payload.snapshot === undefined) throw new Error("Account service returned an invalid API connection receipt.");
+      return rememberSnapshot(payload.snapshot);
+    },
+    async startChatGptConnection(projectId) {
+      const payload = await request("/v1/connections/chatgpt_codex_plugin/authorizations", {
+        method: "POST",
+        body: JSON.stringify({ ...(projectId ? { projectId } : {}) }),
+      });
+      if (!isRecord(payload) || payload.status !== "device" || payload.authorization === undefined) throw new Error("Account service returned an invalid ChatGPT authorization.");
+      return { status: "device", authorization: parseDeviceAuthorization(payload.authorization) };
+    },
+    async getChatGptConnection(authorizationId) {
+      const payload = await request(`/v1/connections/chatgpt_codex_plugin/authorizations/${encodeURIComponent(authorizationId)}`);
+      if (!isRecord(payload) || (payload.status !== "device" && payload.status !== "connected") || payload.authorization === undefined) {
+        throw new Error("Account service returned an invalid ChatGPT authorization.");
       }
-      if (payload.status === "redirect") {
-        return { status: "redirect", authorizationUrl: validateAuthorizationUrl(requireString(payload.authorizationUrl, "authorization URL")) };
+      const authorization = parseDeviceAuthorization(payload.authorization);
+      if (payload.status === "connected") {
+        if (payload.snapshot === undefined) throw new Error("Account service omitted the connected account snapshot.");
+        return { status: "connected", authorization, snapshot: rememberSnapshot(payload.snapshot) };
       }
-      if (payload.snapshot === undefined) throw new Error("Account service omitted the connected account snapshot.");
-      return { status: "connected", snapshot: rememberSnapshot(payload.snapshot) };
+      return { status: "device", authorization };
     },
     async disconnectConnection(connectionId) {
       return rememberSnapshot(await request(`/v1/connections/${encodeURIComponent(connectionId)}`, { method: "DELETE" }));
+    },
+    async createAiJob(connectionId, prompt, project, model, reasoningEffort) {
+      const payload = await request("/v1/ai/jobs", {
+        method: "POST",
+        body: JSON.stringify({ connectionId, prompt, project, model, reasoningEffort }),
+      });
+      if (!isRecord(payload) || payload.job === undefined) throw new Error("Account service returned an invalid AI job receipt.");
+      return parseAiJob(payload.job);
+    },
+    async getAiJob(jobId) {
+      const payload = await request(`/v1/ai/jobs/${encodeURIComponent(jobId)}`);
+      if (!isRecord(payload) || payload.job === undefined) throw new Error("Account service returned an invalid AI job.");
+      return parseAiJob(payload.job);
     },
     async setSyncEnabled(enabled) {
       return rememberSnapshot(await request("/v1/account/preferences", {
@@ -302,15 +461,6 @@ function loadDeviceSnapshot(storage: StorageLike | undefined): AccountSnapshot {
     }
     return { ...EMPTY_SNAPSHOT };
   }
-}
-
-function deviceDisplayName(email: string): string {
-  const localPart = email.split("@")[0] ?? "Creator";
-  return localPart
-    .split(/[._-]+/)
-    .filter(Boolean)
-    .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
-    .join(" ") || "Creator";
 }
 
 function availableLocalStorage(): StorageLike | undefined {
@@ -349,23 +499,6 @@ export function createDeviceAccountClient(storage: StorageLike | undefined = ava
     async getSnapshot() {
       return snapshot;
     },
-    async requestMagicLink(email) {
-      const normalized = validateEmail(email);
-      const now = new Date();
-      const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
-      const next = persist({
-        account: {
-          id: `device-${crypto.randomUUID()}`,
-          email: normalized,
-          displayName: deviceDisplayName(normalized),
-          expiresAt,
-          mode: "device",
-        },
-        connections: [],
-        syncEnabled: false,
-      });
-      return { status: "device-session", email: normalized, expiresAt, snapshot: next };
-    },
     async startSignIn() {
       throw new Error("Cloud sign-in requires the GlassWare account service.");
     },
@@ -378,13 +511,29 @@ export function createDeviceAccountClient(storage: StorageLike | undefined = ava
       snapshot = { ...EMPTY_SNAPSHOT };
       return snapshot;
     },
-    async startConnection() {
+    async connectApiKey() {
+      requireAccount();
+      throw new Error("AI connections require the GlassWare account service. This build is not connected to it yet.");
+    },
+    async startChatGptConnection() {
+      requireAccount();
+      throw new Error("AI connections require the GlassWare account service. This build is not connected to it yet.");
+    },
+    async getChatGptConnection() {
       requireAccount();
       throw new Error("AI connections require the GlassWare account service. This build is not connected to it yet.");
     },
     async disconnectConnection(connectionId) {
       requireAccount();
       return persist({ ...snapshot, connections: snapshot.connections.filter((connection) => connection.id !== connectionId) });
+    },
+    async createAiJob() {
+      requireAccount();
+      throw new Error("AI jobs require the GlassWare account service.");
+    },
+    async getAiJob() {
+      requireAccount();
+      throw new Error("AI jobs require the GlassWare account service.");
     },
     async setSyncEnabled(enabled) {
       requireAccount();

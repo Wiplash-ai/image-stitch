@@ -127,7 +127,7 @@ try {
   assert(await page.getByRole("button", { name: "3D layer depth" }).count() === 0, "Layers should stay in the compact professional list view");
 
   await page.getByRole("button", { name: "Shapes" }).click();
-  assert(await page.locator(".shape-library button").count() === 12, "The shape library should expose twelve starter shapes");
+  assert(await page.locator(".shape-library button").count() === 15, "The shape library should expose the expanded starter shapes");
   assert(await page.getByText("Bring in an image").count() === 0, "Shapes should not show image-upload settings");
   await page.screenshot({ path: "artifacts/shapes-panel-smoke.png", fullPage: true });
   await page.getByRole("button", { name: "Add Star" }).click();
@@ -152,6 +152,18 @@ try {
     assert(await shapeSelect.inputValue() === shape, `The ${shape} renderer should remain selectable`);
   }
 
+  await page.getByRole("button", { name: "Annotate" }).click();
+  assert(await page.locator(".annotation-library button").count() === 7, "Annotate should expose screenshot-specific markup tools");
+  await page.getByRole("button", { name: "Add Curved arrow" }).click();
+  await page.getByRole("button", { name: "Layers" }).click();
+  assert(await page.locator(".layer-row").filter({ hasText: "Curved arrow" }).count() === 1, "Curved arrows should become editable layers");
+  await page.getByRole("button", { name: "Undo" }).click();
+  await page.getByRole("button", { name: "Annotate" }).click();
+  await page.getByRole("button", { name: "Add Blur" }).click();
+  await page.getByRole("button", { name: "Layers" }).click();
+  assert(await page.locator(".layer-row").filter({ hasText: "Blur" }).count() === 1, "Blur regions should become editable layers");
+  await page.getByRole("button", { name: "Undo" }).click();
+
   await page.getByRole("button", { name: "Text", exact: true }).click();
   assert(await page.getByRole("button", { name: "Add a heading" }).isVisible(), "Text should offer task-specific type presets");
   assert(await page.getByText("Bring in an image").count() === 0, "Text should not show image-upload settings");
@@ -168,7 +180,7 @@ try {
   assert(await page.getByRole("button", { name: "Align left" }).getAttribute("title") === "Align left", "Alignment icons should expose tooltips");
   const png = await page.screenshot({ type: "png", clip: { x: 0, y: 0, width: 120, height: 60 } });
   openImagePng = png;
-  await page.locator('input[type="file"][accept^="image/"]').setInputFiles({ name: "smoke.png", mimeType: "image/png", buffer: png });
+  await page.getByLabel("Upload image file").setInputFiles({ name: "smoke.png", mimeType: "image/png", buffer: png });
   await page.getByRole("button", { name: "Images", exact: true }).click();
   assert(await page.getByRole("button", { name: "Upload from computer" }).isVisible(), "Images should keep local upload visible");
   const searchGroup = page.locator(".image-search-form");
@@ -195,6 +207,39 @@ try {
   const brightness = page.getByRole("slider", { name: "Brightness" });
   await brightness.focus();
   await brightness.press("ArrowRight");
+
+  await page.getByRole("button", { name: "Studio", exact: true }).click();
+  assert(await page.locator(".studio-look-grid button").count() === 4, "Studio should expose four one-click presentation looks");
+  await page.getByRole("button", { name: /^Float/ }).click();
+  assert(await page.getByRole("slider", { name: "Radius" }).inputValue() === "18", "The Float look should apply curved corners");
+  await page.getByRole("button", { name: "Undo" }).click();
+  assert(await page.getByRole("slider", { name: "Radius" }).inputValue() === "0", "Undo should restore image presentation styling");
+  await page.getByRole("button", { name: "Redo" }).click();
+  assert(await page.getByRole("slider", { name: "Radius" }).inputValue() === "18", "Redo should restore image presentation styling");
+  await page.getByRole("button", { name: "Mac light" }).click();
+  assert(await page.getByRole("slider", { name: "Frame padding" }).inputValue() === "32", "Browser frames should expose their inner padding");
+  await page.screenshot({ path: "artifacts/studio-panel-smoke.png", fullPage: true });
+
+  await page.getByRole("button", { name: "Whole artwork" }).click();
+  assert(await page.getByLabel("Enable whole artwork presentation").isChecked() === false, "Whole-artwork styling should start disabled");
+  await page.getByRole("button", { name: /^Float/ }).click();
+  assert(await page.getByLabel("Enable whole artwork presentation").isChecked(), "A whole-artwork look should enable its presentation");
+  assert(await page.getByRole("slider", { name: "Outer spacing" }).inputValue() === "72", "Whole-artwork Studio should expose outer spacing");
+  await page.getByRole("button", { name: "gradient", exact: true }).click();
+  await page.getByRole("button", { name: "Daybreak gradient" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
+  assert((await page.getByRole("button", { name: "Graphite gradient" }).getAttribute("class"))?.includes("active"), "Undo should restore the prior artwork gradient");
+  await page.getByRole("button", { name: "Redo" }).click();
+  assert((await page.getByRole("button", { name: "Daybreak gradient" }).getAttribute("class"))?.includes("active"), "Redo should restore the gradient artwork backdrop");
+  const backdropPixel = await page.locator(".design-canvas canvas").first().evaluate((canvas) => {
+    const context = canvas.getContext("2d");
+    return [...(context?.getImageData(20, 20, 1, 1).data ?? [])];
+  });
+  assert(backdropPixel[0] > 200 && backdropPixel[1] < 210, "The active Daybreak gradient should render into the artwork backdrop");
+  await page.screenshot({ path: "artifacts/studio-whole-artwork-smoke.png", fullPage: true });
+
+  await page.getByLabel("Replace selected image file").setInputFiles({ name: "replacement.png", mimeType: "image/png", buffer: png });
+  await page.getByText(/Replaced the image source/).waitFor();
 
   const canvasBeforeZoom = await page.locator(".design-canvas").boundingBox();
   await page.mouse.move(canvasBeforeZoom.x + canvasBeforeZoom.width / 2, canvasBeforeZoom.y + canvasBeforeZoom.height / 2);
@@ -225,6 +270,10 @@ try {
 
   await page.locator(".layer-row").filter({ hasText: "smoke.png" }).locator(".layer-main").click();
   assert(await page.getByRole("slider", { name: "Contrast" }).inputValue() === "22", "Photo adjustments should survive reload");
+  await page.getByRole("button", { name: "Studio", exact: true }).click();
+  assert(await page.getByRole("slider", { name: "Radius" }).inputValue() === "18", "Image presentation should survive reload");
+  await page.getByRole("button", { name: "Layers" }).click();
+  await page.locator(".layer-row").filter({ hasText: "smoke.png" }).locator(".layer-main").click();
   const artboard = await page.locator(".design-canvas").boundingBox();
   await page.mouse.move(artboard.x + artboard.width / 2, artboard.y + artboard.height / 2);
   await page.mouse.down();
@@ -259,48 +308,47 @@ try {
   assert(editedPhoto, `Portable project should contain smoke.png; got ${JSON.stringify(projectBundle.project.objects.map(({ kind, name }) => ({ kind, name })))}`);
   assert(editedPhoto.adjustments.contrast === 22 && editedPhoto.adjustments.brightness === 0.05, "Portable projects should retain photo adjustments");
   assert(editedPhoto.crop.width < 1 || editedPhoto.crop.height < 1, "Portable projects should retain non-destructive crops");
+  assert(editedPhoto.presentation.cornerRadius === 18 && editedPhoto.presentation.shadow.enabled, "Portable projects should retain Studio presentation styling");
+  assert(projectBundle.project.canvas.presentation.enabled && projectBundle.project.canvas.presentation.backdrop.type === "gradient" && projectBundle.project.canvas.presentation.backdrop.value === "daybreak", "Portable projects should retain rich whole-artwork backdrops");
+  assert(editedPhoto.presentation.frame.type === "macos-light" && editedPhoto.presentation.frame.title === "GlassWare", "Portable projects should retain browser frame shells");
   assert(Math.abs(editedPhoto.x - 510) < 0.01, "Near-center drags should snap the cropped photo to the artboard center");
   assert(projectBundle.project.objects.find((object) => object.name === "Headline").fontFamily === "Georgia", "Portable projects should retain typography edits");
   assert(projectBundle.project.objects.find((object) => object.text === "Inline canvas headline"), "Portable projects should retain inline canvas text edits");
 
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  const signInDialog = page.getByRole("dialog", { name: "Sign in to GlassWare" });
+  const signInDialog = page.getByRole("dialog", { name: "Sign in or create an account" });
   await signInDialog.waitFor();
-  for (const provider of ["Continue with Google", "Continue with GitHub", "Continue with Wiplash"]) {
-    assert(await signInDialog.getByRole("button", { name: provider }).isVisible(), `${provider} should always be visible in the sign-in modal`);
-  }
-  assert(await signInDialog.getByRole("status").innerText() === "Wiplash sign-in is ready", "The modal should disclose cloud sign-in readiness");
-  const emailInput = signInDialog.getByLabel("Email for this browser");
-  const emailMetrics = await emailInput.evaluate((element) => {
-    const field = element.parentElement;
-    const inputBox = element.getBoundingClientRect();
-    const fieldBox = field.getBoundingClientRect();
-    return {
-      fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
-      centerDelta: Math.abs((inputBox.top + inputBox.height / 2) - (fieldBox.top + fieldBox.height / 2)),
-    };
-  });
-  assert(emailMetrics.fontSize >= 15, "The modal email input should use readable type");
-  assert(emailMetrics.centerDelta < 1, "The modal email input should be vertically centered in its field");
+  const wiplashProvider = signInDialog.getByRole("button", { name: /^Continue with Wiplash.ai/ });
+  assert(await wiplashProvider.isVisible(), "The sign-in modal should use the shared Wiplash.ai account entry");
+  assert((await wiplashProvider.innerText()).includes("Choose Google, GitHub, GitLab, or use your existing session"), "The Wiplash.ai action should explain its provider choices");
+  assert(await signInDialog.locator(".modal-wiplash-mark").isVisible(), "The Wiplash.ai action should show the Wiplash mark");
+  assert(await signInDialog.getByRole("status").count() === 0, "A healthy sign-in service should not show a redundant readiness message");
+  assert(!(await signInDialog.innerText()).includes("ecosystem"), "The sign-in modal should avoid ecosystem marketing copy");
   await page.screenshot({ path: "artifacts/sign-in-modal-smoke.png", fullPage: true });
-  await emailInput.fill("mom.example@example.com");
-  await signInDialog.getByRole("button", { name: "Continue on this device" }).click();
+  await signInDialog.getByRole("button", { name: "Keep creating without an account" }).click();
   await signInDialog.waitFor({ state: "detached" });
-  assert(await page.getByRole("button", { name: "Mom Example", exact: true }).isVisible(), "The modal should establish the device profile and update the account control");
   await page.getByRole("button", { name: "Ask AI" }).click();
-  const subscriptionCard = page.locator(".connection-card").filter({ hasText: "ChatGPT / Codex" });
-  assert(await subscriptionCard.getByRole("button", { name: "Cloud connection required" }).isDisabled(), "Provider connections should not be faked without the cloud account service");
+  assert(await page.getByText("Connect your AI", { exact: true }).isVisible(), "AI should present one clear connection entry");
   assert(await page.locator('input[type="password"]').count() === 0, "The editor must not expose a provider credential input");
-  assert(await page.getByText("key never enters this browser UI").isVisible(), "The API connection should disclose its credential boundary");
   assert(!(await page.locator("body").innerText()).includes("Preview"), "Account surfaces should not use prototype preview language");
+  assert(!(await page.locator("body").innerText()).includes("Sandbox ready"), "The editor should not describe itself as a sandbox");
 
   await page.reload({ waitUntil: "networkidle" });
-  assert(await page.getByRole("button", { name: "Mom Example", exact: true }).isVisible(), "The device profile should survive reload");
-  await page.getByRole("button", { name: "Ask AI" }).click();
-  assert(await page.locator(".connection-card").filter({ hasText: "ChatGPT / Codex" }).getByRole("button", { name: "Cloud connection required" }).isDisabled(), "Reload should preserve the honest provider boundary");
+  assert(await page.getByRole("button", { name: "Sign in", exact: true }).isVisible(), "Continuing without an account should stay accountless after reload");
   await page.screenshot({ path: "artifacts/account-ai-connections-smoke.png", fullPage: true });
+
+  await page.getByRole("button", { name: "Files", exact: true }).click();
+  await page.getByRole("button", { name: "Try Studio Playground" }).click();
+  await page.waitForFunction(() => document.querySelector(".project-name input")?.value === "Studio Playground");
+  assert(await page.locator(".toolrail button.active").innerText() === "Studio", "The Studio Playground should open directly in Studio");
+  assert(await page.locator(".inspector").getByText("Studio dashboard screenshot", { exact: true }).isVisible(), "The sample screenshot should be selected");
+  assert(await page.getByRole("slider", { name: "Radius" }).inputValue() === "0", "The sample screenshot should start with neutral styling");
+  await page.getByRole("button", { name: "Photo White print border" }).click();
+  await page.getByRole("button", { name: "Strong", exact: true }).click();
+  assert(await page.getByRole("slider", { name: "Radius" }).inputValue() === "3", "The sample should accept Studio looks immediately");
+  await page.screenshot({ path: "artifacts/studio-playground-smoke.png", fullPage: true });
   assert(browserErrors.length === 0, `Browser emitted errors:\n${browserErrors.join("\n")}`);
-  process.stdout.write("GlassWare browser smoke passed: full-card draggable layers, modal sign-in, device profile, inline text, fonts, colors, wheel zoom, open images, persistence, exports, and honest AI boundaries.\n");
+  process.stdout.write("GlassWare browser smoke passed: selected-image and whole-artwork Studio styling, draggable layers, shared Wiplash sign-in, reusable Studio Playground, inline text, fonts, colors, wheel zoom, open images, persistence, exports, and honest AI boundaries.\n");
 } finally {
   await browser?.close();
   server.kill("SIGTERM");

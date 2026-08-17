@@ -2,10 +2,14 @@ import Konva from "konva";
 import type { Filter } from "konva/lib/Node";
 import {
   DEFAULT_IMAGE_ADJUSTMENTS,
+  DEFAULT_IMAGE_PRESENTATION,
   FULL_IMAGE_CROP,
+  cloneImagePresentation,
   type DesignNode,
   type ImageAdjustments,
   type ImageDesignNode,
+  type ImageFrame,
+  type ImagePresentation,
   type NormalizedCrop,
   type ShapeDesignNode,
   type ShapeKind,
@@ -93,10 +97,10 @@ function createShapeNode(node: ShapeDesignNode): Konva.Shape {
     designFill: node.fill,
     designShape: node.shape,
   };
-  if (node.shape === "rect" || node.shape === "rounded-rect") {
+  if (node.shape === "rect" || node.shape === "rounded-rect" || node.shape === "redact") {
     return new Konva.Rect({
       ...shared,
-      fill: node.fill,
+      fill: node.shape === "redact" ? "#111111" : node.fill,
       cornerRadius: node.shape === "rounded-rect" ? Math.max(node.cornerRadius, 24) : 0,
     });
   }
@@ -130,6 +134,29 @@ function createShapeNode(node: ShapeDesignNode): Konva.Shape {
       pointerWidth: Math.min(node.width * 0.24, node.height * 0.8),
       lineCap: "round",
       lineJoin: "round",
+    });
+  }
+  if (node.shape === "curved-arrow") {
+    return new Konva.Arrow({
+      ...shared,
+      points: [0, node.height * 0.72, node.width * 0.34, node.height * 0.08, node.width, node.height * 0.45],
+      tension: 0.48,
+      fill: node.fill,
+      stroke: node.fill,
+      strokeWidth: Math.max(8, node.height * 0.1),
+      pointerLength: Math.min(node.width * 0.16, node.height * 0.48),
+      pointerWidth: Math.min(node.width * 0.18, node.height * 0.52),
+      lineCap: "round",
+      lineJoin: "round",
+    });
+  }
+  if (node.shape === "blur") {
+    return new Konva.Rect({
+      ...shared,
+      fill: "rgba(255,255,255,.72)",
+      stroke: "rgba(17,17,17,.16)",
+      dash: [10, 7],
+      cornerRadius: Math.max(node.cornerRadius, 8),
     });
   }
   return createPathShape(node);
@@ -172,7 +199,7 @@ function loadImage(blob: Blob): Promise<HTMLImageElement> {
   });
 }
 
-export function applyImagePresentation(
+export function applyImageEdits(
   imageNode: Konva.Image,
   crop: NormalizedCrop,
   adjustments: ImageAdjustments,
@@ -209,7 +236,185 @@ export function applyImagePresentation(
   }
 }
 
-export async function designNodeToKonva(node: DesignNode, resolveAsset: AssetResolver): Promise<Konva.Shape> {
+export function applyImagePresentation(
+  imageNode: Konva.Image,
+  presentation: ImagePresentation,
+): void {
+  imageNode.setAttr("imagePresentation", cloneImagePresentation(presentation));
+  imageNode.cornerRadius(presentation.cornerRadius);
+  imageNode.strokeEnabled(false);
+  imageNode.shadowEnabled(presentation.shadow.enabled && presentation.frame.type === "none");
+  imageNode.shadowColor(presentation.shadow.color);
+  imageNode.shadowBlur(presentation.shadow.blur);
+  imageNode.shadowOffsetX(presentation.shadow.offsetX);
+  imageNode.shadowOffsetY(presentation.shadow.offsetY);
+  imageNode.shadowOpacity(presentation.shadow.opacity);
+  const shell = imageNode.getParent()?.findOne(`#frame-shell-${imageNode.getAttr("designId")}`);
+  if (shell instanceof Konva.Group) {
+    updatePresentationFrameShell(shell, imageNode.width(), imageNode.height(), presentation);
+    syncImageFrameShell(imageNode, shell);
+  }
+}
+
+function frameIsDark(type: ImageFrame["type"]): boolean {
+  return type.endsWith("-dark") || type === "arc-dark" || type === "border-dark";
+}
+
+function frameHasChrome(type: ImageFrame["type"]): boolean {
+  return type.startsWith("arc-") || type.startsWith("macos-") || type.startsWith("windows-");
+}
+
+export function updatePresentationFrameShell(
+  shell: Konva.Group,
+  width: number,
+  height: number,
+  presentation: ImagePresentation,
+): void {
+  shell.destroyChildren();
+  const frame = presentation.frame;
+  const enabled = frame.type !== "none";
+  shell.visible(enabled);
+  shell.setAttrs({ width, height, framePresentation: { ...frame } });
+  if (!enabled) return;
+
+  const dark = frameIsDark(frame.type);
+  const chrome = frameHasChrome(frame.type);
+  const titleHeight = chrome ? Math.max(30, frame.padding || 30) : 0;
+  const padding = chrome ? Math.max(1, frame.width) : Math.max(frame.padding, frame.width);
+  const shellX = -padding;
+  const shellY = -padding - titleHeight;
+  const shellWidth = width + padding * 2;
+  const shellHeight = height + padding * 2 + titleHeight;
+  const bodyColor = frame.type === "photograph"
+    ? "#ffffff"
+    : frame.type.startsWith("glass-")
+      ? dark ? "rgba(12,18,28,.72)" : "rgba(255,255,255,.72)"
+      : frame.color;
+  const strokeColor = frame.type === "outline-light" || frame.type === "border-light"
+    ? "#ffffff"
+    : frame.type === "border-dark"
+      ? "#111111"
+      : dark ? "#242424" : "#d8d8d8";
+  shell.add(new Konva.Rect({
+    x: shellX,
+    y: shellY,
+    width: shellWidth,
+    height: shellHeight,
+    fill: bodyColor,
+    opacity: frame.opacity,
+    stroke: strokeColor,
+    strokeWidth: Math.max(frame.width, frame.type.startsWith("glass-") ? 2 : 1),
+    cornerRadius: Math.max(4, presentation.cornerRadius + (chrome ? 8 : padding)),
+    shadowEnabled: presentation.shadow.enabled,
+    shadowColor: presentation.shadow.color,
+    shadowBlur: presentation.shadow.blur,
+    shadowOffsetX: presentation.shadow.offsetX,
+    shadowOffsetY: presentation.shadow.offsetY,
+    shadowOpacity: presentation.shadow.opacity,
+    listening: false,
+  }));
+
+  if (!chrome) return;
+  const textColor = dark ? "#f5f5f5" : "#242424";
+  shell.add(new Konva.Text({
+    x: shellX + 78,
+    y: shellY + Math.max(8, titleHeight * 0.28),
+    width: Math.max(40, shellWidth - 156),
+    text: frame.title || (frame.type.startsWith("arc-") ? "glassware.app" : "GlassWare"),
+    align: "center",
+    fill: textColor,
+    opacity: 0.82,
+    fontFamily: "Arial",
+    fontSize: Math.max(10, titleHeight * 0.32),
+    listening: false,
+  }));
+  if (frame.type.startsWith("windows-")) {
+    ["−", "□", "×"].forEach((symbol, index) => shell.add(new Konva.Text({
+      x: shellX + shellWidth - 66 + index * 21,
+      y: shellY + 7,
+      width: 18,
+      text: symbol,
+      align: "center",
+      fill: textColor,
+      fontFamily: "Arial",
+      fontSize: Math.max(11, titleHeight * 0.38),
+      listening: false,
+    })));
+  } else {
+    ["#ff5f57", "#febc2e", "#28c840"].forEach((color, index) => shell.add(new Konva.Circle({
+      x: shellX + 18 + index * 19,
+      y: shellY + titleHeight / 2,
+      radius: Math.max(4, titleHeight * 0.14),
+      fill: color,
+      listening: false,
+    })));
+  }
+}
+
+export function syncImageFrameShell(imageNode: Konva.Image, shell: Konva.Group): void {
+  shell.setAttrs({
+    x: imageNode.x(),
+    y: imageNode.y(),
+    rotation: imageNode.rotation(),
+    scaleX: imageNode.scaleX(),
+    scaleY: imageNode.scaleY(),
+    opacity: imageNode.opacity(),
+    visible: imageNode.visible() && imageNode.getAttr("imagePresentation")?.frame?.type !== "none",
+  });
+}
+
+export function createImageFrameShell(
+  imageNode: Konva.Image,
+  presentation: ImagePresentation,
+): Konva.Group {
+  const shell = new Konva.Group({
+    id: `frame-shell-${imageNode.getAttr("designId")}`,
+    listening: false,
+  });
+  updatePresentationFrameShell(shell, imageNode.width(), imageNode.height(), presentation);
+  syncImageFrameShell(imageNode, shell);
+  imageNode.on("xChange.frameShell yChange.frameShell widthChange.frameShell heightChange.frameShell rotationChange.frameShell scaleXChange.frameShell scaleYChange.frameShell opacityChange.frameShell visibleChange.frameShell", () => {
+    updatePresentationFrameShell(
+      shell,
+      imageNode.width(),
+      imageNode.height(),
+      imageNode.getAttr("imagePresentation") ?? presentation,
+    );
+    syncImageFrameShell(imageNode, shell);
+  });
+  return shell;
+}
+
+async function createBlurRegionNode(
+  node: ShapeDesignNode,
+  source?: Konva.Container,
+): Promise<Konva.Shape> {
+  if (!source) return createShapeNode(node);
+  source.draw();
+  const snapshot = source.toCanvas({
+    x: node.x,
+    y: node.y,
+    width: Math.max(1, node.width),
+    height: Math.max(1, node.height),
+    pixelRatio: 1,
+  });
+  const blur = new Konva.Image({
+    ...commonAttributes(node),
+    image: snapshot,
+    designFill: node.fill,
+    designShape: node.shape,
+  });
+  blur.cache({ pixelRatio: 1 });
+  blur.blurRadius(18);
+  blur.filters([Konva.Filters.Blur]);
+  return blur;
+}
+
+export async function designNodeToKonva(
+  node: DesignNode,
+  resolveAsset: AssetResolver,
+  blurSource?: Konva.Container,
+): Promise<Konva.Shape> {
   if (node.kind === "text") {
     return new Konva.Text({
       ...commonAttributes(node),
@@ -223,6 +428,7 @@ export async function designNodeToKonva(node: DesignNode, resolveAsset: AssetRes
     });
   }
   if (node.kind === "shape") {
+    if (node.shape === "blur") return createBlurRegionNode(node, blurSource);
     return createShapeNode(node);
   }
 
@@ -236,6 +442,7 @@ export async function designNodeToKonva(node: DesignNode, resolveAsset: AssetRes
       assetId: node.assetId,
       normalizedCrop: { ...node.crop },
       imageAdjustments: { ...node.adjustments },
+      imagePresentation: cloneImagePresentation(node.presentation),
       missingAsset: true,
     });
   }
@@ -244,7 +451,8 @@ export async function designNodeToKonva(node: DesignNode, resolveAsset: AssetRes
     image: await loadImage(asset.blob),
     assetId: node.assetId,
   });
-  applyImagePresentation(imageNode, node.crop, node.adjustments);
+  applyImageEdits(imageNode, node.crop, node.adjustments);
+  applyImagePresentation(imageNode, node.presentation);
   return imageNode;
 }
 
@@ -302,6 +510,7 @@ export function konvaNodeToDesign(node: Konva.Node): DesignNode {
     assetId: String(node.getAttr("assetId")),
     crop: { ...(node.getAttr("normalizedCrop") ?? FULL_IMAGE_CROP) },
     adjustments: { ...(node.getAttr("imageAdjustments") ?? DEFAULT_IMAGE_ADJUSTMENTS) },
+    presentation: cloneImagePresentation(node.getAttr("imagePresentation") ?? DEFAULT_IMAGE_PRESENTATION),
   } satisfies ImageDesignNode;
 }
 

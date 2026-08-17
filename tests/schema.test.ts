@@ -3,7 +3,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import projectSchema from "../public/schemas/project.v1.schema.json";
 import bundleSchema from "../public/schemas/bundle.v1.schema.json";
-import { createProject, SHAPE_KINDS } from "../src/lib/model";
+import { cloneImagePresentation, createProject, SHAPE_KINDS } from "../src/lib/model";
 
 function validator() {
   const ajv = new Ajv2020({ allErrors: true });
@@ -16,6 +16,19 @@ describe("public JSON schemas", () => {
   it("accepts the live project model", () => {
     const validate = validator().getSchema(projectSchema.$id)!;
     const project = createProject("Schema fixture");
+    expect(validate(project), JSON.stringify(validate.errors)).toBe(true);
+  });
+
+  it("accepts whole-artwork Studio presentation settings", () => {
+    const validate = validator().getSchema(projectSchema.$id)!;
+    const project = createProject("Artwork presentation");
+    project.canvas.presentation = {
+      ...project.canvas.presentation,
+      enabled: true,
+      padding: 88,
+      background: "#dfe8ff",
+      cornerRadius: 24,
+    };
     expect(validate(project), JSON.stringify(validate.errors)).toBe(true);
   });
 
@@ -38,6 +51,12 @@ describe("public JSON schemas", () => {
       opacity: 1, visible: true, locked: false,
       crop: { x: 0.2, y: 0, width: 0.6, height: 1 },
       adjustments: { brightness: 0.1, contrast: 12, saturation: 0.2, blur: 0, grayscale: false, sepia: false },
+      presentation: {
+        ...cloneImagePresentation(),
+        cornerRadius: 20,
+        frame: { type: "border-dark", width: 2, color: "#111111", opacity: 1, padding: 0, title: "" },
+        shadow: { enabled: true, color: "#111111", blur: 48, offsetX: 0, offsetY: 12, opacity: 0.28 },
+      },
     });
     const validate = validator().getSchema(projectSchema.$id)!;
     expect(validate(project), JSON.stringify(validate.errors)).toBe(true);

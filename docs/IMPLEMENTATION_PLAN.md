@@ -1,8 +1,8 @@
 # GlassWare implementation plan
 
 **Status:** Accepted foundation
-**Version:** 0.3
-**Updated:** 2026-08-13
+**Version:** 0.4
+**Updated:** 2026-08-17
 
 ## Product objective
 
@@ -41,8 +41,14 @@ captures a visible tab, and loads that capture into its bundled editor.
   ellipse controls.
 - [x] Inline canvas text editing, searchable Google Font catalog, and local
   WOFF/WOFF2/TTF/OTF upload with portable font embedding.
-- [x] Twelve-shape starter library including polygons, callouts, lines, and arrows.
-- [ ] Borders and shadows.
+- [x] Fifteen-shape starter library including polygons, callouts, straight and
+  curved arrows, visual blur, and privacy-safe redaction.
+- [x] Screenshot Studio-inspired presentation looks for a selected image or the
+  whole artwork, including corner radius, browser/device/photo frames,
+  adjustable two-axis shadows, artwork spacing, and solid, gradient, or image
+  backdrops stored as non-destructive project data.
+- [x] Screenshot annotation palette and selected-image source replacement that
+  preserve editable layers and existing presentation settings.
 - [x] Non-destructive centered crop presets, opacity, brightness, contrast,
   saturation, blur, grayscale, sepia, and named photo looks.
 - [ ] Interactive crop handles, rotate/flip, blend modes, temperature, tint,

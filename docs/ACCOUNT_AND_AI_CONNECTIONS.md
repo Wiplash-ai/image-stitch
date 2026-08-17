@@ -4,52 +4,70 @@
 
 GlassWare remains useful without an account. Signing in does not upload a
 project, enable sync, or contact an AI provider. Accounts exist for explicit
-cloud features: optional sync, project-scoped plugin authorization, encrypted
-provider connections, sharing, and future team controls.
+cloud features: optional sync, encrypted AI connections, isolated Codex jobs,
+sharing, and future team controls.
 
 The public client supports two adapters:
 
-- `device` stores a browser-bound profile for personalization when the account
-  service is not configured. It never claims cloud authentication, enables
-  sync, or creates pretend AI connections.
+- `device` preserves readable legacy browser profiles for migration only. It
+  does not create new accounts, claim cloud authentication, enable sync, or
+  create pretend AI connections.
 - `service` talks to the optional private account service configured by
   `VITE_GLASSWARE_ACCOUNT_API_URL`.
 
-The device adapter stores only a display profile. Cloud actions remain visibly
-unavailable. Production sign-in starts in the GlassWare modal and redirects to
-the shared Wiplash Keycloak realm through a confidential BFF. Google and GitHub
-are selected directly; GitLab is not offered for the GlassWare client. Sessions
-return through protected HTTP-only cookies, and Keycloak tokens never enter the
-browser app.
+Cloud actions remain visibly unavailable without the service. Production
+sign-in starts with one Wiplash.ai action in the GlassWare modal and redirects
+to the shared Wiplash Keycloak realm through a confidential BFF. The realm page
+offers Google, GitHub, and GitLab when no Wiplash session exists and otherwise
+reuses the existing SSO session. GlassWare still receives its own protected
+HTTP-only session cookie; no app cookie or Keycloak token is shared with the
+browser client.
 
 ## Connection lanes
 
-### ChatGPT/Codex plugin
+Connection setup lives in a dedicated modal with three tabs. The ChatGPT and API
+tabs configure encrypted credentials for a private AI workspace; the `Use your
+AI` tab exposes the public `glassware-create/SKILL.md` link for external agents
+that create portable project bundles without any account access.
 
-The subscribed OpenAI client performs reasoning and calls narrow GlassWare MCP
-tools. The OpenAI host acts as the OAuth client, while GlassWare's identity
-provider authorizes access to the user's GlassWare account and project. The
-editor never receives ChatGPT passwords, cookies, refresh tokens, or subscription
-credentials.
+### ChatGPT/Codex subscription
+
+The private runner starts the official Codex CLI device-authorization flow. The
+creator opens OpenAI's one-time page and enters the displayed code. The runner
+encrypts the resulting Codex credential cache and decrypts it only into a
+short-lived per-job credential directory. GlassWare never asks for ChatGPT
+passwords, browser cookies, session-token copies, or a raw `auth.json` file.
 
 ### OpenAI API key
 
-API usage is separately billed by OpenAI. A production key is entered only into
-an encrypted server-side vault or future local companion. Browser and extension
-code receive an opaque connection ID and safe status metadata; they never receive
-the raw key back.
+API usage is separately billed by OpenAI. The creator enters a key into the
+explicit password field; it crosses the browser once over HTTPS to the account
+service, is verified with OpenAI, and is encrypted in the private runner vault.
+The browser clears the field after success and receives only an opaque
+connection ID and safe status metadata. The key is never returned.
 
-### Future local Codex companion
+### Isolated use
 
-A local companion may use official `codex login` and the operating-system
-credential store. The browser talks to that companion through a narrow localhost
-protocol. This is separate from the plugin and API-key connections and is not
-implemented by the current public client.
+Both connection lanes run the Codex CLI in disposable containers. A job receives
+only a bounded project manifest, the user's request, a JSON output schema, and
+one decrypted credential. It receives no browser database, host project mount,
+Docker socket, unrelated account credential, or persistent shell workspace.
+The first shipped result is a reviewable edit plan; automatic canvas mutation is
+not part of the connection operation.
+
+### Model settings
+
+Every AI job carries an allowlisted model and reasoning effort through the
+browser, account BFF, private runner, and Codex CLI. The current choices are
+`gpt-5.6-luna`, `gpt-5.6-terra`, and `gpt-5.6-sol`; GlassWare defaults to the
+latest Luna model, `gpt-5.6-luna`. Supported reasoning settings are `none`,
+`low`, `medium`, `high`, `xhigh`, and `max`, with `medium` as the default.
+Availability still follows the connected ChatGPT account or API project.
 
 Official product references:
 
 - [OpenAI Codex authentication](https://developers.openai.com/codex/auth)
-- [OpenAI plugin OAuth authentication](https://developers.openai.com/plugins/build/auth)
+- [OpenAI API authentication](https://platform.openai.com/docs/api-reference/authentication)
 
 ## Public client contract
 
@@ -63,9 +81,17 @@ GET    /v1/account
 POST   /v1/auth/authorizations
 POST   /v1/auth/logout
 PATCH  /v1/account/preferences
-POST   /v1/connections/{kind}/authorizations
+POST   /v1/connections/openai_api
+POST   /v1/connections/chatgpt_codex_plugin/authorizations
+GET    /v1/connections/chatgpt_codex_plugin/authorizations/{authorization_id}
 DELETE /v1/connections/{connection_id}
+POST   /v1/ai/jobs
+GET    /v1/ai/jobs/{job_id}
 ```
+
+An AI job request includes `connectionId`, `prompt`, the bounded project
+manifest, `model`, and `reasoningEffort`. The runner rejects model or effort
+values outside its fixed allowlist before launching a container.
 
 `GET /v1/account` returns:
 
@@ -88,6 +114,10 @@ DELETE /v1/connections/{connection_id}
     }
   ],
   "syncEnabled": false,
+  "aiRuntime": {
+    "available": true,
+    "message": "Private AI workspace is ready"
+  },
   "csrfToken": "request-bound-csrf-value"
 }
 ```
@@ -96,10 +126,18 @@ The account service must never serialize provider secrets. The public client
 fails closed if a snapshot contains fields named `apiKey`, `accessToken`,
 `refreshToken`, `password`, `secret`, `clientSecret`, or `authJson`.
 
-Starting a connection returns either an HTTPS authorization redirect or an
-updated account snapshot. Redirects are navigated as top-level browser flows;
-tokens and one-time codes must not be placed in application logs or retained in
-project state.
+ChatGPT connection starts return a short-lived device authorization containing
+only an OpenAI URL, one-time code, status, and expiry. API-key connections return
+an updated account snapshot after verification and encryption. Tokens, keys,
+one-time codes, and credential caches must not enter application logs, URLs,
+analytics, project state, or browser storage.
+
+The public external-agent skill is bundled at
+`/skills/glassware-create/SKILL.md` and published from the public repository at
+`https://github.com/Wiplash-ai/glassware/blob/main/public/skills/glassware-create/SKILL.md`.
+The raw GitHub URL is suitable for copy/paste into agents. The skill links to the
+public project and bundle schemas and instructs an agent to return an importable
+`.glassware.json` file. It contains no private endpoints or credentials.
 
 ## Sync and project residency
 
@@ -109,13 +147,21 @@ assets will leave the device, bind consent to a project revision, and expose
 retention and deletion controls. Extension builds need a deliberate device-link
 or web-app handoff rather than broad cross-origin host permissions.
 
+The project-level cloud action will use the visible label **Save** and the
+tooltip **Save to cloud**. It must not appear as successful until a project
+manifest, its referenced assets, and a revision receipt have reached the cloud
+project API. The existing sync preference cannot substitute for that upload
+receipt.
+
 ## Required private-service controls
 
-- Passwordless, passkey, or external identity login with secure session cookies.
+- External-identity-only login with secure session cookies.
 - Exact-origin CORS, CSRF enforcement, rate limits, and abuse controls.
-- Hashed one-time magic-link tokens with short expiry and one-time use.
 - Tenant- and project-scoped authorization grants.
-- Encrypted credential storage outside the application database.
+- Authenticated private-runner calls with an independently rotated service token.
+- AES-256-GCM credential storage with account- and provider-bound authenticated data.
+- Disposable non-root containers, dropped capabilities, bounded CPU/memory/PIDs,
+  read-only roots, strict workspace mounts, timeouts, and bounded logs.
 - Immediate revocation, safe status receipts, and credential-redacted audit logs.
 - No pooled ChatGPT accounts and no conversion of subscription access into API
   credits.

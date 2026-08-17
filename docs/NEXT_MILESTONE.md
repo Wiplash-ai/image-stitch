@@ -38,6 +38,8 @@ safely target several objects.
 
 ### 2. Complete the photo-editing loop
 
+- Preserve source replacement, screenshot annotations, and rich Studio
+  presentation as the stable base for the remaining photo tools.
 - Interactive crop handles with aspect lock and reset.
 - Rotate, flip, temperature, tint, sharpen, and vignette.
 - Before/after preview and quality warning when an export exceeds source detail.
@@ -64,22 +66,25 @@ Once the selection and command model is stable:
   per-operation accept/reject choice.
 - Apply approved operations as one named, reversible revision.
 - Build inspect/propose/apply MCP tools against the same command layer.
-- Keep provider connections unavailable until production account,
-  OAuth, credential vaulting, revocation, and audit boundaries are ready.
+- Forward-test the public `glassware-create` skill against new-project and
+  existing-bundle requests, then add a schema-validation receipt to its handoff.
+- Keep generated plans review-only until stale-revision checks, selective
+  acceptance, named undo revisions, and durable audit records are ready.
 
 ## Later
 
 - Templates, brand kits, multipage designs, and resize-with-layout adaptation.
-- Production account service, passkeys/magic links, optional encrypted sync,
-  sharing, comments, and team roles.
-- User-authorized ChatGPT/Codex and server-vaulted OpenAI API connections.
+- Production deployment for the OAuth-only account service, optional encrypted
+  sync, sharing, comments, and team roles.
+- Durable queues, retention controls, and usage receipts for user-authorized
+  ChatGPT/Codex and server-vaulted OpenAI API connections.
 - Background removal, generation, and replacement adapters with explicit cost
   and data-residency receipts.
 
 ## Explicitly not in this milestone
 
 - Billing, subscriptions, or monetizing access to model usage users already own.
-- Real provider credentials in the browser or extension UI.
+- Persisting provider credentials in browser or extension state.
 - Collaboration, shared team libraries, or public template marketplace.
 - Broad generative AI features before selective plan review is safe and useful.
 

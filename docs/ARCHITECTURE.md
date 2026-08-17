@@ -24,12 +24,15 @@ flowchart LR
   Editor --> FontStore[(IndexedDB font files)]
   GoogleFonts[Google Fonts CSS API] -->|optional open-source font download| FontStore
   Editor --> Exporter[Browser export pipeline]
-  Editor -. optional sign-in .-> Identity[Account service]
-  ChatGPT[ChatGPT or Codex] -->|MCP tool calls| MCP[Public MCP adapter]
-  MCP -->|OAuth project grant| Identity
-  MCP -->|validated edit plan| Editor
-  Editor -. explicit BYOK action .-> Vault[Encrypted connection service]
-  Vault -. provider request .-> OpenAI[OpenAI API]
+  Editor -. secure cookie and CSRF .-> Identity[Account BFF]
+  Identity -->|private service token| Runner[AI runner]
+  ChatGPT[ChatGPT subscription] -->|device authorization| Runner
+  Editor -. explicit key connection .-> Identity
+  Runner --> Vault[(Encrypted per-account credentials)]
+  Runner -->|disposable bounded workspace| Sandbox[Codex container]
+  Sandbox --> OpenAI[OpenAI]
+  Sandbox -->|validated edit plan| Identity
+  Identity -->|opaque job and plan| Editor
 ```
 
 ## Module boundaries
@@ -43,9 +46,10 @@ flowchart LR
 | Export pipeline | PNG/JPEG/WebP/SVG/PDF generation and QA | Export receipts | Export jobs |
 | Extension shell | Capture, page integration, clipboard handoff | Pending captures | Chrome messages |
 | AI plan review | Validation, diff, selective acceptance | Edit plans | Plan review commands |
-| MCP adapter | Agent-facing project operations | No project bytes | Versioned MCP tools |
 | Account client | Optional sessions, preferences, safe connection receipts | No credentials | Cookie-backed service contract |
-| Connection service | Optional BYOK encryption and revocation | Encrypted credentials | Opaque connection IDs |
+| Account BFF | OIDC session, CSRF, private-runner delegation | Signed session cookie | Narrow account, connection, and job API |
+| AI runner | Credential vault, device login, job orchestration | Encrypted credentials and bounded job metadata | Private service API only |
+| Codex sandbox | One design-planning run with an allowlisted model and reasoning effort | Disposable project manifest and auth cache | Schema-bound edit plan |
 
 Only project core commits durable project state. Canvas, AI, extension, and
 export modules request typed commands rather than mutating persistence directly.
@@ -78,8 +82,8 @@ and every plan binds to an immutable base revision.
 - `glassware.edit-plan.v1`: rationale-bearing proposed object operations.
 - `glassware.export-receipt.v1`: source revision, dimensions, MIME type,
   byte size, hash, warnings, and approval time.
-- MCP tools will wrap the same commands; they do not receive an unrestricted
-  browser, filesystem, or canvas mutation primitive.
+- Future MCP tools may wrap the same commands; neither current jobs nor future
+  tools receive an unrestricted browser, host filesystem, or canvas mutation primitive.
 
 ## Architecture decisions
 
@@ -118,41 +122,61 @@ and every plan binds to an immutable base revision.
 ### ADR-004: separate subscription and API connections
 
 - **Status:** Accepted.
-- **Decision:** ChatGPT/Codex uses MCP under the user's authenticated client.
-  Direct API use uses a separately billed API key held only in an encrypted
-  server-side vault or future local companion.
+- **Decision:** ChatGPT subscription access uses the official Codex CLI device
+  flow in a private runner. Direct API use uses a separately billed API key.
+  Both credential types are encrypted server-side and used only inside
+  per-account disposable Codex workspaces.
 - **Consequences:** The UI must explain the distinction and disclose residency
-  before a model receives content.
+  before a model receives content. The runner requires its own deployment,
+  vault key, internal token, Docker boundary, revocation, and audit controls.
+  Model and reasoning choices are explicit job inputs validated against a
+  runner-owned allowlist before Codex starts.
 
-### ADR-005: non-destructive image edits in the project model
+### ADR-005: non-destructive image edits and presentation in the project model
 
 - **Status:** Accepted.
 - **Context:** Photo adjustments must survive reload, undo, portable export,
   canvas-engine upgrades, and future AI edit plans without replacing originals.
 - **Decision:** Keep original blobs immutable. Store crop rectangles as normalized
-  source coordinates and adjustments as bounded typed values on image objects.
-  The canvas adapter renders these values with Konva filters and display-sized
-  caches. Existing v1 image objects migrate to a full crop and neutral settings;
-  the public v1 schema keeps the new fields optional for backward compatibility.
-- **Consequences:** Edits remain reversible and engine-independent. Filter caches
+  source coordinates, adjustments as bounded typed values, and presentation as
+  engine-independent corner, frame, and shadow values on image objects. Canvas
+  snapshots also carry a whole-artwork presentation with enablement, outer
+  spacing, a solid/gradient/image backdrop, corners, frame, and shadow. Frames
+  are engine-independent identifiers for browser, glass, border, and photo
+  shells; backdrops retain bounded opacity, blur, and texture values. The editor
+  renders that mode as a transformed, clipped composition group while keeping
+  every child object's coordinates and editability intact. The
+  Screenshot Studio adapter translates the supported `set_border_radius`,
+  `set_frame`, and `set_shadow` operation vocabulary into this model. The canvas
+  adapter renders these values with Konva filters, composite frame groups, and
+  display-sized caches. Screenshot annotations remain ordinary editable shape
+  nodes; opaque redaction is intentionally distinct from visual blur. Replacing
+  an image updates only its immutable source-asset reference, preserving the
+  node's layout and non-destructive settings. Existing v1 image objects migrate to a full crop,
+  neutral adjustments, and neutral presentation; the public v1 schema keeps the
+  new fields optional for backward compatibility.
+- **Consequences:** Image and whole-artwork edits remain reversible and
+  engine-independent, and full exports preserve their original dimensions.
+  Filter caches
   consume browser memory, and centered crop presets are intentionally narrower
   than the future interactive crop tool.
 - **Alternatives:** Destructive raster replacement was simpler but would lose
   source quality and editability. Persisting Konva filter JSON would couple the
   public contract to one rendering engine.
 
-### ADR-006: optional account service with an honest device-profile fallback
+### ADR-006: optional OAuth account service with legacy-device compatibility
 
 - **Status:** Accepted.
-- **Decision:** Keep normal editing accountless. The public client exposes one
-  account/connection interface with a browser-bound device-profile adapter and
-  an HTTPS private-service adapter. Sign-in entry lives in a modal. Production
-  sessions use HTTP-only cookies, mutating requests use CSRF receipts, and
-  connection responses contain opaque identifiers rather than provider
-  credentials.
-- **Consequences:** Personalization works before private infrastructure is
-  configured, but device mode does not claim cloud authentication and cannot
-  fake sync or provider authorization. Extension identity still needs a future
+- **Decision:** Keep normal editing accountless. The public client preserves old
+  device-profile data for migration but creates no new pseudo-accounts. Sign-in
+  uses the shared Wiplash realm through an HTTPS private-service adapter; the
+  realm owns Google, GitHub, and GitLab provider selection and can reuse an
+  existing Wiplash SSO session. Production sessions remain app-specific
+  HTTP-only cookies, mutating requests use CSRF receipts, and connection
+  responses contain opaque identifiers rather than provider credentials.
+- **Consequences:** Old local data remains readable, but device mode does not
+  claim cloud authentication and cannot fake sync or provider authorization.
+  Extension identity still needs a future
   device-link flow rather than broad host permissions.
 
 ### ADR-007: Openverse adapter for openly licensed image search
@@ -201,6 +225,8 @@ and every plan binds to an immutable base revision.
 | Extension and web behavior drift | Medium | Package the same production editor build |
 | Browser storage eviction or quota | High | Persistence request, quota UI, project backups, recovery tests |
 | AI edits corrupt designs | High | Base-revision binding, schema validation, preview, selective apply, undo |
-| API key exposure | Critical | Never store in client code; encrypted vault, opaque IDs, revocation |
+| API key or ChatGPT token exposure | Critical | Ephemeral browser input, device auth, AES-GCM vault, opaque IDs, redacted logs, revocation |
+| Public request gains host access | Critical | BFF has no Docker socket; private runner uses no host project mounts and launches bounded non-root containers |
+| Cross-account credential use | Critical | Account-keyed vault contexts, opaque connection IDs, server-derived account identity |
 | Template/font/asset licensing errors | High | Machine-readable attribution inventory and release audit |
 | Search catalog has stale or inaccurate license data | High | Restrictive default filters, durable source receipt, visible verification link |

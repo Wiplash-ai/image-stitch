@@ -2,13 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createAccountServiceClient,
   createDeviceAccountClient,
-  type MagicLinkReceipt,
   type AccountSnapshot,
-  type AiConnectionKind,
+  type AiDeviceAuthorization,
+  type AiJob,
+  type AiModelId,
+  type AiReasoningEffort,
   type SignInProvider,
 } from "../lib/account-connections";
 
-const EMPTY_SNAPSHOT: AccountSnapshot = { account: null, connections: [], syncEnabled: false };
+const EMPTY_SNAPSHOT: AccountSnapshot = {
+  account: null,
+  connections: [],
+  syncEnabled: false,
+  aiRuntime: { available: false, message: "AI workspace is unavailable" },
+};
 const PRODUCTION_ACCOUNT_API_URL = "https://auth.wiplash.ai/glassware";
 const LOCAL_ACCOUNT_API_URL = "http://127.0.0.1:3010";
 
@@ -35,11 +42,15 @@ export interface AccountConnectionsModel {
   busy: string | null;
   notice: string;
   error: string;
-  signIn(email: string): Promise<MagicLinkReceipt["status"] | null>;
+  deviceAuthorization: AiDeviceAuthorization | null;
+  aiJob: AiJob | null;
   signInWith(provider: SignInProvider): Promise<void>;
   signOut(): Promise<void>;
-  connect(kind: AiConnectionKind, projectId: string): Promise<void>;
+  connectApiKey(apiKey: string, projectId: string): Promise<boolean>;
+  connectChatGpt(projectId: string): Promise<void>;
   disconnect(connectionId: string): Promise<void>;
+  runAi(connectionId: string, prompt: string, project: unknown, model: AiModelId, reasoningEffort: AiReasoningEffort): Promise<void>;
+  clearAiJob(): void;
   setSyncEnabled(enabled: boolean): Promise<void>;
   clearMessage(): void;
 }
@@ -66,38 +77,42 @@ export function useAccountConnections(): AccountConnectionsModel {
   const [snapshot, setSnapshot] = useState<AccountSnapshot>(EMPTY_SNAPSHOT);
   const [loading, setLoading] = useState(true);
   const [cloudStatus, setCloudStatus] = useState<AccountConnectionsModel["cloudStatus"]>("checking");
-  const [cloudMessage, setCloudMessage] = useState("Checking Wiplash sign-in…");
+  const [cloudMessage, setCloudMessage] = useState("Checking secure sign-in…");
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [deviceAuthorization, setDeviceAuthorization] = useState<AiDeviceAuthorization | null>(null);
+  const [aiJob, setAiJob] = useState<AiJob | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setCloudStatus("checking");
-    setCloudMessage("Checking Wiplash sign-in…");
+    setCloudMessage("Checking secure sign-in…");
     void (async () => {
       const deviceSnapshot = await deviceClient.getSnapshot();
       if (!serviceClient) {
         if (!cancelled) {
           setSnapshot(deviceSnapshot);
           setCloudStatus("unavailable");
-          setCloudMessage(serviceSetup.configurationError || "Wiplash sign-in is not configured.");
+          setCloudMessage(serviceSetup.configurationError || "OAuth sign-in is not configured.");
         }
         return;
       }
       try {
         const serviceSnapshot = await serviceClient.getSnapshot();
         if (!cancelled) {
-          setSnapshot(serviceSnapshot.account ? serviceSnapshot : deviceSnapshot);
+          setSnapshot(serviceSnapshot.account
+            ? serviceSnapshot
+            : { ...deviceSnapshot, aiRuntime: serviceSnapshot.aiRuntime });
           setCloudStatus("available");
-          setCloudMessage("Wiplash sign-in is ready");
+          setCloudMessage("");
         }
       } catch {
         if (!cancelled) {
           setSnapshot(deviceSnapshot);
           setCloudStatus("unavailable");
-          setCloudMessage("Wiplash sign-in service is not reachable yet.");
+          setCloudMessage("OAuth sign-in service is not reachable yet.");
         }
       }
     })().finally(() => {
@@ -107,6 +122,65 @@ export function useAccountConnections(): AccountConnectionsModel {
       cancelled = true;
     };
   }, [deviceClient, serviceClient, serviceSetup.configurationError]);
+
+  useEffect(() => {
+    if (!serviceClient || !deviceAuthorization || !["starting", "waiting"].includes(deviceAuthorization.status)) return;
+    let cancelled = false;
+    let timer = 0;
+    const poll = async () => {
+      try {
+        const result = await serviceClient.getChatGptConnection(deviceAuthorization.id);
+        if (cancelled) return;
+        if (result.authorization) setDeviceAuthorization(result.authorization);
+        if (result.status === "connected" && result.snapshot) {
+          setSnapshot(result.snapshot);
+          setNotice("ChatGPT subscription connected to your private AI workspace.");
+          return;
+        }
+        if (result.authorization && ["failed", "expired"].includes(result.authorization.status)) {
+          setError(result.authorization.error || "ChatGPT authorization expired. Start it again.");
+          return;
+        }
+        timer = window.setTimeout(poll, 1_500);
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not check ChatGPT authorization.");
+      }
+    };
+    timer = window.setTimeout(poll, 750);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [deviceAuthorization?.id, deviceAuthorization?.status, serviceClient]);
+
+  useEffect(() => {
+    if (!serviceClient || !aiJob || !["queued", "running"].includes(aiJob.status)) return;
+    let cancelled = false;
+    let timer = 0;
+    const poll = async () => {
+      try {
+        const next = await serviceClient.getAiJob(aiJob.id);
+        if (cancelled) return;
+        setAiJob(next);
+        if (next.status === "completed") {
+          setNotice("Codex returned a reviewable design plan.");
+          return;
+        }
+        if (next.status === "failed") {
+          setError(next.error || "Codex could not finish this plan.");
+          return;
+        }
+        timer = window.setTimeout(poll, 1_500);
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not check the AI job.");
+      }
+    };
+    timer = window.setTimeout(poll, 1_000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [aiJob?.id, aiJob?.status, serviceClient]);
 
   const run = useCallback(async <T,>(label: string, task: () => Promise<T>, apply?: (value: T) => void): Promise<T | undefined> => {
     setBusy(label);
@@ -124,16 +198,6 @@ export function useAccountConnections(): AccountConnectionsModel {
     }
   }, []);
 
-  const signIn = useCallback(async (email: string) => {
-    const receipt = await run("sign-in", () => deviceClient.requestMagicLink(email, currentReturnUrl()));
-    if (!receipt) return null;
-    if (receipt.snapshot) setSnapshot(receipt.snapshot);
-    setNotice(receipt.status === "email-sent"
-      ? `Sign-in link sent to ${receipt.email}.`
-      : `GlassWare is ready for ${receipt.email} on this device.`);
-    return receipt.status;
-  }, [deviceClient, run]);
-
   const signOut = useCallback(async () => {
     const cloudSession = snapshot.account?.mode === "authenticated" && Boolean(serviceClient);
     const activeClient = cloudSession && serviceClient ? serviceClient : deviceClient;
@@ -145,30 +209,40 @@ export function useAccountConnections(): AccountConnectionsModel {
 
   const signInWith = useCallback(async (provider: SignInProvider) => {
     if (!serviceClient) {
-      setError(serviceSetup.configurationError || "Wiplash sign-in is not configured.");
+      setError(serviceSetup.configurationError || "OAuth sign-in is not configured.");
       return;
     }
     const authorization = await run(`sign-in-${provider}`, () => serviceClient.startSignIn(provider, currentReturnUrl()));
     if (!authorization) {
       setCloudStatus("unavailable");
-      setCloudMessage("Wiplash sign-in service is not reachable yet.");
+      setCloudMessage("OAuth sign-in service is not reachable yet.");
       return;
     }
     setCloudStatus("available");
     window.location.assign(authorization.authorizationUrl);
   }, [run, serviceClient, serviceSetup.configurationError]);
 
-  const connect = useCallback(async (kind: AiConnectionKind, projectId: string) => {
-    const activeClient = snapshot.account?.mode === "authenticated" && serviceClient ? serviceClient : deviceClient;
-    const authorization = await run(`connect-${kind}`, () => activeClient.startConnection(kind, currentReturnUrl(), projectId));
-    if (!authorization) return;
-    if (authorization.status === "redirect" && authorization.authorizationUrl) {
-      window.location.assign(authorization.authorizationUrl);
+  const connectApiKey = useCallback(async (apiKey: string, projectId: string) => {
+    if (!serviceClient || snapshot.account?.mode !== "authenticated") {
+      setError("Sign in before connecting an OpenAI API key.");
+      return false;
+    }
+    const next = await run("connect-openai_api", () => serviceClient.connectApiKey(apiKey, projectId), setSnapshot);
+    if (!next) return false;
+    setNotice("OpenAI API access connected. The key is encrypted server-side and was not returned to this editor.");
+    return true;
+  }, [run, serviceClient, snapshot.account?.mode]);
+
+  const connectChatGpt = useCallback(async (projectId: string) => {
+    if (!serviceClient || snapshot.account?.mode !== "authenticated") {
+      setError("Sign in before connecting a ChatGPT subscription.");
       return;
     }
-    if (authorization.snapshot) setSnapshot(authorization.snapshot);
-    setNotice("AI connection established.");
-  }, [deviceClient, run, serviceClient, snapshot.account?.mode]);
+    const authorization = await run("connect-chatgpt_codex_plugin", () => serviceClient.startChatGptConnection(projectId));
+    if (!authorization?.authorization) return;
+    setDeviceAuthorization(authorization.authorization);
+    setNotice("ChatGPT device authorization started. Complete the one-time OpenAI sign-in shown below.");
+  }, [run, serviceClient, snapshot.account?.mode]);
 
   const disconnect = useCallback(async (connectionId: string) => {
     const activeClient = snapshot.account?.mode === "authenticated" && serviceClient ? serviceClient : deviceClient;
@@ -176,6 +250,17 @@ export function useAccountConnections(): AccountConnectionsModel {
     if (!next) return;
     setNotice("AI connection disconnected.");
   }, [deviceClient, run, serviceClient, snapshot.account?.mode]);
+
+  const runAi = useCallback(async (connectionId: string, prompt: string, project: unknown, model: AiModelId, reasoningEffort: AiReasoningEffort) => {
+    if (!serviceClient || snapshot.account?.mode !== "authenticated") {
+      setError("Sign in and connect an AI provider before asking Codex.");
+      return;
+    }
+    const next = await run("ai-job", () => serviceClient.createAiJob(connectionId, prompt, project, model, reasoningEffort));
+    if (!next) return;
+    setAiJob(next);
+    setNotice("Codex job queued. Your canvas remains unchanged while the plan runs.");
+  }, [run, serviceClient, snapshot.account?.mode]);
 
   const setSyncEnabled = useCallback(async (enabled: boolean) => {
     const activeClient = snapshot.account?.mode === "authenticated" && serviceClient ? serviceClient : deviceClient;
@@ -193,11 +278,17 @@ export function useAccountConnections(): AccountConnectionsModel {
     busy,
     notice,
     error,
-    signIn,
+    deviceAuthorization,
+    aiJob,
     signInWith,
     signOut,
-    connect,
+    connectApiKey,
+    connectChatGpt,
     disconnect,
+    runAi,
+    clearAiJob() {
+      setAiJob(null);
+    },
     setSyncEnabled,
     clearMessage() {
       setNotice("");
