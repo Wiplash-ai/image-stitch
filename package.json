@@ -1,16 +1,19 @@
 {
   "name": "glassware",
   "private": true,
-  "version": "0.7.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:extension": "npm run build && node scripts/package-extension.mjs",
+    "store:assets": "npm run build && node scripts/generate-store-assets.mjs",
+    "verify:extension": "node scripts/verify-extension-package.mjs",
     "smoke": "node scripts/smoke.mjs",
+    "smoke:extension": "node scripts/smoke-extension.mjs",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "verify": "npm run test && npm run build:extension && npm run smoke"
+    "verify": "npm run test && npm run build:extension && npm run verify:extension && npm run smoke"
   },
   "dependencies": {
     "konva": "^10.0.0",
@@ -26,6 +29,7 @@
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "fake-indexeddb": "^6.2.5",
+    "fflate": "^0.8.3",
     "playwright-core": "^1.62.1",
     "typescript": "^5.9.2",
     "vite": "^7.1.7",

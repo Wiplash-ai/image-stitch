@@ -2,10 +2,18 @@ import Konva from "konva";
 import type { Filter } from "konva/lib/Node";
 import {
   DEFAULT_IMAGE_ADJUSTMENTS,
+  DEFAULT_IMAGE_MASK,
+  DEFAULT_IMAGE_PRESENTATION,
   FULL_IMAGE_CROP,
+  cloneImagePresentation,
+  cloneImageMask,
+  cloneObjectShadow,
   type DesignNode,
   type ImageAdjustments,
   type ImageDesignNode,
+  type ImageFrame,
+  type ImageMask,
+  type ImagePresentation,
   type NormalizedCrop,
   type ShapeDesignNode,
   type ShapeKind,
@@ -93,10 +101,10 @@ function createShapeNode(node: ShapeDesignNode): Konva.Shape {
     designFill: node.fill,
     designShape: node.shape,
   };
-  if (node.shape === "rect" || node.shape === "rounded-rect") {
+  if (node.shape === "rect" || node.shape === "rounded-rect" || node.shape === "redact") {
     return new Konva.Rect({
       ...shared,
-      fill: node.fill,
+      fill: node.shape === "redact" ? "#111111" : node.fill,
       cornerRadius: node.shape === "rounded-rect" ? Math.max(node.cornerRadius, 24) : 0,
     });
   }
@@ -132,10 +140,34 @@ function createShapeNode(node: ShapeDesignNode): Konva.Shape {
       lineJoin: "round",
     });
   }
+  if (node.shape === "curved-arrow") {
+    return new Konva.Arrow({
+      ...shared,
+      points: [0, node.height * 0.72, node.width * 0.34, node.height * 0.08, node.width, node.height * 0.45],
+      tension: 0.48,
+      fill: node.fill,
+      stroke: node.fill,
+      strokeWidth: Math.max(8, node.height * 0.1),
+      pointerLength: Math.min(node.width * 0.16, node.height * 0.48),
+      pointerWidth: Math.min(node.width * 0.18, node.height * 0.52),
+      lineCap: "round",
+      lineJoin: "round",
+    });
+  }
+  if (node.shape === "blur") {
+    return new Konva.Rect({
+      ...shared,
+      fill: "rgba(255,255,255,.72)",
+      stroke: "rgba(17,17,17,.16)",
+      dash: [10, 7],
+      cornerRadius: Math.max(node.cornerRadius, 8),
+    });
+  }
   return createPathShape(node);
 }
 
 function commonAttributes(node: DesignNode) {
+  const shadow = node.kind === "image" ? null : cloneObjectShadow(node.shadow);
   return {
     x: node.x,
     y: node.y,
@@ -153,6 +185,17 @@ function commonAttributes(node: DesignNode) {
     designName: node.name,
     nodeKind: node.kind,
     designLocked: node.locked,
+    ...(node.groupId ? { designGroupId: node.groupId } : {}),
+    globalCompositeOperation: node.blendMode ?? "source-over",
+    ...(shadow ? {
+      designShadow: cloneObjectShadow(shadow),
+      shadowEnabled: shadow.enabled,
+      shadowColor: shadow.color,
+      shadowBlur: shadow.blur,
+      shadowOffsetX: shadow.offsetX,
+      shadowOffsetY: shadow.offsetY,
+      shadowOpacity: shadow.opacity,
+    } : {}),
   };
 }
 
@@ -172,7 +215,106 @@ function loadImage(blob: Blob): Promise<HTMLImageElement> {
   });
 }
 
-export function applyImagePresentation(
+function createMaskedImageSource(image: HTMLImageElement, crop: NormalizedCrop, mask: ImageMask): CanvasImageSource {
+  if (!mask.enabled || !mask.strokes.length) return image;
+  const naturalWidth = image.naturalWidth || image.width;
+  const naturalHeight = image.naturalHeight || image.height;
+  const scale = Math.min(1, 4096 / Math.max(naturalWidth, naturalHeight));
+  const width = Math.max(1, Math.round(naturalWidth * scale));
+  const height = Math.max(1, Math.round(naturalHeight * scale));
+  const source = document.createElement("canvas");
+  const alpha = document.createElement("canvas");
+  source.width = alpha.width = width;
+  source.height = alpha.height = height;
+  const sourceContext = source.getContext("2d");
+  const alphaContext = alpha.getContext("2d");
+  if (!sourceContext || !alphaContext) return image;
+  sourceContext.drawImage(image, 0, 0, width, height);
+  if (!mask.inverted) {
+    alphaContext.fillStyle = "#ffffff";
+    alphaContext.fillRect(0, 0, width, height);
+  }
+  const cropWidth = crop.width * width;
+  const cropHeight = crop.height * height;
+  for (const stroke of mask.strokes) {
+    alphaContext.save();
+    const hidesPixels = mask.inverted ? stroke.mode === "reveal" : stroke.mode === "hide";
+    alphaContext.globalCompositeOperation = hidesPixels ? "destination-out" : "source-over";
+    alphaContext.strokeStyle = "#ffffff";
+    alphaContext.fillStyle = "#ffffff";
+    alphaContext.lineCap = "round";
+    alphaContext.lineJoin = "round";
+    alphaContext.lineWidth = Math.max(1, stroke.size * Math.min(cropWidth, cropHeight));
+    alphaContext.beginPath();
+    for (let index = 0; index < stroke.points.length; index += 2) {
+      const x = (crop.x + stroke.points[index] * crop.width) * width;
+      const y = (crop.y + stroke.points[index + 1] * crop.height) * height;
+      if (index === 0) alphaContext.moveTo(x, y);
+      else alphaContext.lineTo(x, y);
+    }
+    if (stroke.points.length === 2) alphaContext.lineTo(
+      (crop.x + stroke.points[0] * crop.width) * width + 0.01,
+      (crop.y + stroke.points[1] * crop.height) * height,
+    );
+    alphaContext.stroke();
+    alphaContext.restore();
+  }
+  sourceContext.save();
+  sourceContext.globalCompositeOperation = "destination-in";
+  if (mask.feather > 0) sourceContext.filter = `blur(${Math.min(100, mask.feather) * scale}px)`;
+  sourceContext.drawImage(alpha, 0, 0);
+  sourceContext.restore();
+  return source;
+}
+
+function colorDetailFilter(adjustments: ImageAdjustments): Filter {
+  return (imageData) => {
+    const { data, width, height } = imageData;
+    const source = adjustments.sharpen > 0 ? new Uint8ClampedArray(data) : null;
+    const temperature = adjustments.temperature * 42;
+    const tint = adjustments.tint * 34;
+    const centerX = (width - 1) / 2;
+    const centerY = (height - 1) / 2;
+    const maximumDistance = Math.sqrt(centerX * centerX + centerY * centerY) || 1;
+    const clamp = (value: number) => Math.min(255, Math.max(0, value));
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const index = (y * width + x) * 4;
+        let red = data[index] + temperature + tint * 0.55;
+        let green = data[index + 1] - Math.abs(tint) * 0.42;
+        let blue = data[index + 2] - temperature + tint * 0.55;
+        if (source && x > 0 && y > 0 && x < width - 1 && y < height - 1) {
+          const strength = adjustments.sharpen * 0.7;
+          const top = index - width * 4;
+          const bottom = index + width * 4;
+          for (let channel = 0; channel < 3; channel += 1) {
+            const sharpened = source[index + channel] * (1 + strength * 4)
+              - source[top + channel] * strength
+              - source[bottom + channel] * strength
+              - source[index - 4 + channel] * strength
+              - source[index + 4 + channel] * strength;
+            if (channel === 0) red = sharpened + temperature + tint * 0.55;
+            if (channel === 1) green = sharpened - Math.abs(tint) * 0.42;
+            if (channel === 2) blue = sharpened - temperature + tint * 0.55;
+          }
+        }
+        if (adjustments.vignette > 0) {
+          const distance = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2) / maximumDistance;
+          const shade = Math.max(0, (distance - 0.34) / 0.66) ** 1.7 * adjustments.vignette;
+          red *= 1 - shade * 0.82;
+          green *= 1 - shade * 0.82;
+          blue *= 1 - shade * 0.82;
+        }
+        data[index] = clamp(red);
+        data[index + 1] = clamp(green);
+        data[index + 2] = clamp(blue);
+      }
+    }
+  };
+}
+
+export function applyImageEdits(
   imageNode: Konva.Image,
   crop: NormalizedCrop,
   adjustments: ImageAdjustments,
@@ -197,6 +339,7 @@ export function applyImagePresentation(
   if (adjustments.brightness !== 0) filters.push(Konva.Filters.Brighten);
   if (adjustments.contrast !== 0) filters.push(Konva.Filters.Contrast);
   if (adjustments.saturation !== 0) filters.push(Konva.Filters.HSL);
+  if (adjustments.temperature !== 0 || adjustments.tint !== 0 || adjustments.sharpen > 0 || adjustments.vignette > 0) filters.push(colorDetailFilter(adjustments));
   if (adjustments.blur > 0) filters.push(Konva.Filters.Blur);
   if (adjustments.grayscale) filters.push(Konva.Filters.Grayscale);
   if (adjustments.sepia) filters.push(Konva.Filters.Sepia);
@@ -209,7 +352,202 @@ export function applyImagePresentation(
   }
 }
 
-export async function designNodeToKonva(node: DesignNode, resolveAsset: AssetResolver): Promise<Konva.Shape> {
+export function applyImagePresentation(
+  imageNode: Konva.Image,
+  presentation: ImagePresentation,
+): void {
+  imageNode.setAttr("imagePresentation", cloneImagePresentation(presentation));
+  imageNode.cornerRadius(presentation.cornerRadius);
+  imageNode.strokeEnabled(false);
+  imageNode.shadowEnabled(presentation.shadow.enabled && presentation.frame.type === "none");
+  imageNode.shadowColor(presentation.shadow.color);
+  imageNode.shadowBlur(presentation.shadow.blur);
+  imageNode.shadowOffsetX(presentation.shadow.offsetX);
+  imageNode.shadowOffsetY(presentation.shadow.offsetY);
+  imageNode.shadowOpacity(presentation.shadow.opacity);
+  const shell = imageNode.getParent()?.findOne(`#frame-shell-${imageNode.getAttr("designId")}`);
+  if (shell instanceof Konva.Group) {
+    updatePresentationFrameShell(shell, imageNode.width(), imageNode.height(), presentation);
+    syncImageFrameShell(imageNode, shell);
+  }
+}
+
+function frameIsDark(type: ImageFrame["type"]): boolean {
+  return type.endsWith("-dark") || type === "arc-dark" || type === "border-dark";
+}
+
+function frameHasChrome(type: ImageFrame["type"]): boolean {
+  return type.startsWith("arc-") || type.startsWith("macos-") || type.startsWith("windows-");
+}
+
+export function updatePresentationFrameShell(
+  shell: Konva.Group,
+  width: number,
+  height: number,
+  presentation: ImagePresentation,
+): void {
+  shell.destroyChildren();
+  const frame = presentation.frame;
+  const enabled = frame.type !== "none";
+  shell.visible(enabled);
+  shell.setAttrs({ width, height, framePresentation: { ...frame } });
+  if (!enabled) return;
+
+  const dark = frameIsDark(frame.type);
+  const chrome = frameHasChrome(frame.type);
+  const titleHeight = chrome ? Math.max(30, frame.padding || 30) : 0;
+  const padding = chrome ? Math.max(1, frame.width) : Math.max(frame.padding, frame.width);
+  const shellX = -padding;
+  const shellY = -padding - titleHeight;
+  const shellWidth = width + padding * 2;
+  const shellHeight = height + padding * 2 + titleHeight;
+  const bodyColor = frame.type === "photograph"
+    ? "#ffffff"
+    : frame.type.startsWith("glass-")
+      ? dark ? "rgba(12,18,28,.72)" : "rgba(255,255,255,.72)"
+      : frame.color;
+  const strokeColor = frame.type === "outline-light" || frame.type === "border-light"
+    ? "#ffffff"
+    : frame.type === "border-dark"
+      ? "#111111"
+      : dark ? "#242424" : "#d8d8d8";
+  shell.add(new Konva.Rect({
+    x: shellX,
+    y: shellY,
+    width: shellWidth,
+    height: shellHeight,
+    fill: bodyColor,
+    opacity: frame.opacity,
+    stroke: strokeColor,
+    strokeWidth: Math.max(frame.width, frame.type.startsWith("glass-") ? 2 : 1),
+    cornerRadius: Math.max(4, presentation.cornerRadius + (chrome ? 8 : padding)),
+    shadowEnabled: presentation.shadow.enabled,
+    shadowColor: presentation.shadow.color,
+    shadowBlur: presentation.shadow.blur,
+    shadowOffsetX: presentation.shadow.offsetX,
+    shadowOffsetY: presentation.shadow.offsetY,
+    shadowOpacity: presentation.shadow.opacity,
+    listening: false,
+  }));
+
+  if (!chrome) return;
+  const textColor = dark ? "#f5f5f5" : "#242424";
+  shell.add(new Konva.Text({
+    x: shellX + 78,
+    y: shellY + Math.max(8, titleHeight * 0.28),
+    width: Math.max(40, shellWidth - 156),
+    text: frame.title || (frame.type.startsWith("arc-") ? "glassware.app" : "GlassWare"),
+    align: "center",
+    fill: textColor,
+    opacity: 0.82,
+    fontFamily: "Arial",
+    fontSize: Math.max(10, titleHeight * 0.32),
+    listening: false,
+  }));
+  if (frame.type.startsWith("windows-")) {
+    ["−", "□", "×"].forEach((symbol, index) => shell.add(new Konva.Text({
+      x: shellX + shellWidth - 66 + index * 21,
+      y: shellY + 7,
+      width: 18,
+      text: symbol,
+      align: "center",
+      fill: textColor,
+      fontFamily: "Arial",
+      fontSize: Math.max(11, titleHeight * 0.38),
+      listening: false,
+    })));
+  } else {
+    ["#ff5f57", "#febc2e", "#28c840"].forEach((color, index) => shell.add(new Konva.Circle({
+      x: shellX + 18 + index * 19,
+      y: shellY + titleHeight / 2,
+      radius: Math.max(4, titleHeight * 0.14),
+      fill: color,
+      listening: false,
+    })));
+  }
+}
+
+export function syncImageFrameShell(imageNode: Konva.Image, shell: Konva.Group): void {
+  shell.setAttrs({
+    x: imageNode.x(),
+    y: imageNode.y(),
+    rotation: imageNode.rotation(),
+    scaleX: imageNode.scaleX(),
+    scaleY: imageNode.scaleY(),
+    opacity: imageNode.opacity(),
+    visible: imageNode.visible() && imageNode.getAttr("imagePresentation")?.frame?.type !== "none",
+  });
+}
+
+export function createImageFrameShell(
+  imageNode: Konva.Image,
+  presentation: ImagePresentation,
+): Konva.Group {
+  const shell = new Konva.Group({
+    id: `frame-shell-${imageNode.getAttr("designId")}`,
+    listening: false,
+  });
+  updatePresentationFrameShell(shell, imageNode.width(), imageNode.height(), presentation);
+  syncImageFrameShell(imageNode, shell);
+  imageNode.on("xChange.frameShell yChange.frameShell widthChange.frameShell heightChange.frameShell rotationChange.frameShell scaleXChange.frameShell scaleYChange.frameShell opacityChange.frameShell visibleChange.frameShell", () => {
+    updatePresentationFrameShell(
+      shell,
+      imageNode.width(),
+      imageNode.height(),
+      imageNode.getAttr("imagePresentation") ?? presentation,
+    );
+    syncImageFrameShell(imageNode, shell);
+  });
+  return shell;
+}
+
+async function createBlurRegionNode(
+  node: ShapeDesignNode,
+  source?: Konva.Container,
+): Promise<Konva.Shape> {
+  if (!source) return createShapeNode(node);
+  const transform = source.getAbsoluteTransform();
+  const topLeft = transform.point({ x: node.x, y: node.y });
+  const topRight = transform.point({ x: node.x + node.width, y: node.y });
+  const bottomLeft = transform.point({ x: node.x, y: node.y + node.height });
+  const cropWidth = Math.max(1, Math.hypot(topRight.x - topLeft.x, topRight.y - topLeft.y));
+  const cropHeight = Math.max(1, Math.hypot(bottomLeft.x - topLeft.x, bottomLeft.y - topLeft.y));
+  const sourceLayer = source.getLayer();
+  const sourceWasVisible = sourceLayer?.visible() ?? true;
+  let snapshot: HTMLCanvasElement;
+  try {
+    // Project renders are assembled on a hidden staging layer. Konva skips
+    // hidden ancestors when rasterizing, so expose that layer only for this
+    // synchronous offscreen capture and restore it before the browser paints.
+    if (sourceLayer && !sourceWasVisible) sourceLayer.visible(true);
+    source.draw();
+    snapshot = source.toCanvas({
+      x: topLeft.x,
+      y: topLeft.y,
+      width: cropWidth,
+      height: cropHeight,
+      pixelRatio: 1,
+    });
+  } finally {
+    if (sourceLayer && !sourceWasVisible) sourceLayer.visible(false);
+  }
+  const blur = new Konva.Image({
+    ...commonAttributes(node),
+    image: snapshot,
+    designFill: node.fill,
+    designShape: node.shape,
+  });
+  blur.cache({ pixelRatio: 1 });
+  blur.blurRadius(28);
+  blur.filters([Konva.Filters.Blur]);
+  return blur;
+}
+
+export async function designNodeToKonva(
+  node: DesignNode,
+  resolveAsset: AssetResolver,
+  blurSource?: Konva.Container,
+): Promise<Konva.Shape> {
   if (node.kind === "text") {
     return new Konva.Text({
       ...commonAttributes(node),
@@ -223,6 +561,7 @@ export async function designNodeToKonva(node: DesignNode, resolveAsset: AssetRes
     });
   }
   if (node.kind === "shape") {
+    if (node.shape === "blur") return createBlurRegionNode(node, blurSource);
     return createShapeNode(node);
   }
 
@@ -236,15 +575,20 @@ export async function designNodeToKonva(node: DesignNode, resolveAsset: AssetRes
       assetId: node.assetId,
       normalizedCrop: { ...node.crop },
       imageAdjustments: { ...node.adjustments },
+      imagePresentation: cloneImagePresentation(node.presentation),
+      imageMask: cloneImageMask(node.mask),
       missingAsset: true,
     });
   }
+  const image = await loadImage(asset.blob);
   const imageNode = new Konva.Image({
     ...commonAttributes(node),
-    image: await loadImage(asset.blob),
+    image: createMaskedImageSource(image, node.crop, node.mask),
     assetId: node.assetId,
+    imageMask: cloneImageMask(node.mask),
   });
-  applyImagePresentation(imageNode, node.crop, node.adjustments);
+  applyImageEdits(imageNode, node.crop, node.adjustments);
+  applyImagePresentation(imageNode, node.presentation);
   return imageNode;
 }
 
@@ -262,6 +606,8 @@ function readCommon(node: Konva.Node) {
     opacity: node.opacity(),
     visible: node.visible(),
     locked: Boolean(node.getAttr("designLocked")),
+    ...(node.getAttr("designGroupId") ? { groupId: String(node.getAttr("designGroupId")) } : {}),
+    blendMode: (node.globalCompositeOperation() || "source-over") as DesignNode["blendMode"],
   };
 }
 
@@ -279,6 +625,7 @@ export function konvaNodeToDesign(node: Konva.Node): DesignNode {
       fontStyle: text.fontStyle(),
       align: text.align() as TextDesignNode["align"],
       lineHeight: text.lineHeight(),
+      shadow: cloneObjectShadow(node.getAttr("designShadow")),
     } satisfies TextDesignNode;
   }
   if (kind === "shape") {
@@ -294,6 +641,7 @@ export function konvaNodeToDesign(node: Konva.Node): DesignNode {
       shape: shapeKind,
       fill: String(node.getAttr("designFill") || shape.fill() || shape.stroke() || "#111111"),
       cornerRadius: shapeKind === "rounded-rect" && node instanceof Konva.Rect ? Number(node.cornerRadius()) : 0,
+      shadow: cloneObjectShadow(node.getAttr("designShadow")),
     } satisfies ShapeDesignNode;
   }
   return {
@@ -302,6 +650,8 @@ export function konvaNodeToDesign(node: Konva.Node): DesignNode {
     assetId: String(node.getAttr("assetId")),
     crop: { ...(node.getAttr("normalizedCrop") ?? FULL_IMAGE_CROP) },
     adjustments: { ...(node.getAttr("imageAdjustments") ?? DEFAULT_IMAGE_ADJUSTMENTS) },
+    presentation: cloneImagePresentation(node.getAttr("imagePresentation") ?? DEFAULT_IMAGE_PRESENTATION),
+    mask: cloneImageMask(node.getAttr("imageMask") ?? DEFAULT_IMAGE_MASK),
   } satisfies ImageDesignNode;
 }
 

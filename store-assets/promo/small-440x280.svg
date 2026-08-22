@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="280" viewBox="0 0 440 280" role="img" aria-labelledby="title desc">
+  <title id="title">GlassWare</title>
+  <desc id="desc">A black and white GlassWare promotional tile with a stained-glass mark.</desc>
+  <rect width="440" height="280" fill="#f7f7f5"/>
+  <path d="M0 28h440M0 252h440" stroke="#d7d7d2"/>
+  <g transform="translate(34 58) scale(.86)">
+    <rect width="128" height="128" rx="26" fill="#111"/>
+    <clipPath id="glass"><rect x="23" y="23" width="82" height="82" rx="10"/></clipPath>
+    <g clip-path="url(#glass)" stroke="#111" stroke-width="5" stroke-linejoin="round">
+      <path d="M20 20h43L53 53 20 66z" fill="#ff4b4b"/><path d="M63 20h45v29L76 58 53 53z" fill="#ff9f1c"/>
+      <path d="M108 49v31L76 73V58z" fill="#ffe83b"/><path d="M20 66l33-13 23 20-14 34H20z" fill="#2fca75"/>
+      <path d="M76 73l32 7v27H62z" fill="#2ca8ff"/><path d="M20 107h42l-16 24H20z" fill="#7c5cff"/><path d="M62 107h46v24H46z" fill="#ef4fa6"/>
+    </g>
+    <rect x="23" y="23" width="82" height="82" rx="10" fill="none" stroke="#fff" stroke-width="4"/>
+  </g>
+  <g fill="#111">
+    <text x="168" y="107" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="800" letter-spacing="-2">GlassWare</text>
+    <text x="170" y="137" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="2.3">CAPTURE · EDIT · CREATE</text>
+    <path d="M170 158h228" stroke="#111"/>
+    <text x="170" y="183" font-family="Arial, Helvetica, sans-serif" font-size="14">A local-first image editor</text>
+  </g>
+</svg>

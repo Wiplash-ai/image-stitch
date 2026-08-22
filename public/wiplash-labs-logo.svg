@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 120" role="img" aria-labelledby="labsTitle labsDesc">
+  <title id="labsTitle">Wiplash Labs</title>
+  <desc id="labsDesc">A laboratory flask filled with a colorful W-shaped wave beside the Wiplash Labs name.</desc>
+  <defs>
+    <linearGradient id="labsFlow" x1="13" y1="92" x2="470" y2="24" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#27a7c7"/>
+      <stop offset=".52" stop-color="#7758d0"/>
+      <stop offset="1" stop-color="#c33d59"/>
+    </linearGradient>
+    <clipPath id="flaskBody"><path d="M42 35v12L17 88c-7 12 1 24 15 24h63c14 0 22-12 15-24L84 47V35Z"/></clipPath>
+  </defs>
+  <g transform="translate(4)">
+    <path d="M38 12h50M45 12v35L18 91c-6 10 1 21 14 21h63c13 0 20-11 14-21L81 47V12" fill="#f7f5f0" stroke="#111111" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <g clip-path="url(#flaskBody)">
+      <path d="M8 73c15-12 27-12 40 1 13 13 24 13 37-1 13-14 26-13 39 0v48H8Z" fill="url(#labsFlow)" opacity=".95"/>
+      <path d="M23 76 38 94 52 78 66 95 82 74 99 91" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity=".88"/>
+    </g>
+    <circle cx="55" cy="57" r="4" fill="#36b0ca"/>
+    <circle cx="74" cy="44" r="3" fill="#8b58c8"/>
+    <circle cx="94" cy="66" r="3.5" fill="#c33d59"/>
+    <path d="M106 84c14-8 25-5 36 3 10 7 21 7 34-2" fill="none" stroke="url(#labsFlow)" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  <text x="146" y="70" fill="#111111" font-family="Avenir Next, Segoe UI, sans-serif" font-size="53" font-weight="800">Wiplash</text>
+  <text x="359" y="70" fill="url(#labsFlow)" font-family="Avenir Next, Segoe UI, sans-serif" font-size="53" font-weight="800">Labs</text>
+  <path d="M148 88h300" stroke="url(#labsFlow)" stroke-width="4" stroke-linecap="round"/>
+  <text x="149" y="106" fill="#5e5b55" font-family="Avenir Next, Segoe UI, sans-serif" font-size="11" font-weight="700" letter-spacing="5">SMALL TOOLS · BIG ENERGY</text>
+</svg>

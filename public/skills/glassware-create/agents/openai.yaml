@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create with GlassWare"
+  short_description: "Create and edit portable GlassWare designs"
+  default_prompt: "Use $glassware-create to create a polished GlassWare design for my request."
