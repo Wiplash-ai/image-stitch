@@ -14,3 +14,6 @@ button:active { transform: translateY(1px); box-shadow: none; }
 button.secondary { color: #111111; border-color: #a8a8a8; background: #ffffff; }
 button.secondary:hover { border-color: #111111; background: #f6f6f6; }
 small { margin-top: 4px; }
+nav { display: flex; align-items: center; gap: 14px; margin-top: 2px; padding-top: 10px; border-top: 1px solid #e1e1e1; }
+nav a { color: #343434; font: 700 11px/1.4 inherit; text-decoration: none; }
+nav a:hover, nav a:focus-visible { color: #000000; text-decoration: underline; text-underline-offset: 3px; }

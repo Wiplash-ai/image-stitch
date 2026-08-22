@@ -2,13 +2,17 @@ import Konva from "konva";
 import type { Filter } from "konva/lib/Node";
 import {
   DEFAULT_IMAGE_ADJUSTMENTS,
+  DEFAULT_IMAGE_MASK,
   DEFAULT_IMAGE_PRESENTATION,
   FULL_IMAGE_CROP,
   cloneImagePresentation,
+  cloneImageMask,
+  cloneObjectShadow,
   type DesignNode,
   type ImageAdjustments,
   type ImageDesignNode,
   type ImageFrame,
+  type ImageMask,
   type ImagePresentation,
   type NormalizedCrop,
   type ShapeDesignNode,
@@ -163,6 +167,7 @@ function createShapeNode(node: ShapeDesignNode): Konva.Shape {
 }
 
 function commonAttributes(node: DesignNode) {
+  const shadow = node.kind === "image" ? null : cloneObjectShadow(node.shadow);
   return {
     x: node.x,
     y: node.y,
@@ -180,6 +185,17 @@ function commonAttributes(node: DesignNode) {
     designName: node.name,
     nodeKind: node.kind,
     designLocked: node.locked,
+    ...(node.groupId ? { designGroupId: node.groupId } : {}),
+    globalCompositeOperation: node.blendMode ?? "source-over",
+    ...(shadow ? {
+      designShadow: cloneObjectShadow(shadow),
+      shadowEnabled: shadow.enabled,
+      shadowColor: shadow.color,
+      shadowBlur: shadow.blur,
+      shadowOffsetX: shadow.offsetX,
+      shadowOffsetY: shadow.offsetY,
+      shadowOpacity: shadow.opacity,
+    } : {}),
   };
 }
 
@@ -197,6 +213,105 @@ function loadImage(blob: Blob): Promise<HTMLImageElement> {
     };
     image.src = url;
   });
+}
+
+function createMaskedImageSource(image: HTMLImageElement, crop: NormalizedCrop, mask: ImageMask): CanvasImageSource {
+  if (!mask.enabled || !mask.strokes.length) return image;
+  const naturalWidth = image.naturalWidth || image.width;
+  const naturalHeight = image.naturalHeight || image.height;
+  const scale = Math.min(1, 4096 / Math.max(naturalWidth, naturalHeight));
+  const width = Math.max(1, Math.round(naturalWidth * scale));
+  const height = Math.max(1, Math.round(naturalHeight * scale));
+  const source = document.createElement("canvas");
+  const alpha = document.createElement("canvas");
+  source.width = alpha.width = width;
+  source.height = alpha.height = height;
+  const sourceContext = source.getContext("2d");
+  const alphaContext = alpha.getContext("2d");
+  if (!sourceContext || !alphaContext) return image;
+  sourceContext.drawImage(image, 0, 0, width, height);
+  if (!mask.inverted) {
+    alphaContext.fillStyle = "#ffffff";
+    alphaContext.fillRect(0, 0, width, height);
+  }
+  const cropWidth = crop.width * width;
+  const cropHeight = crop.height * height;
+  for (const stroke of mask.strokes) {
+    alphaContext.save();
+    const hidesPixels = mask.inverted ? stroke.mode === "reveal" : stroke.mode === "hide";
+    alphaContext.globalCompositeOperation = hidesPixels ? "destination-out" : "source-over";
+    alphaContext.strokeStyle = "#ffffff";
+    alphaContext.fillStyle = "#ffffff";
+    alphaContext.lineCap = "round";
+    alphaContext.lineJoin = "round";
+    alphaContext.lineWidth = Math.max(1, stroke.size * Math.min(cropWidth, cropHeight));
+    alphaContext.beginPath();
+    for (let index = 0; index < stroke.points.length; index += 2) {
+      const x = (crop.x + stroke.points[index] * crop.width) * width;
+      const y = (crop.y + stroke.points[index + 1] * crop.height) * height;
+      if (index === 0) alphaContext.moveTo(x, y);
+      else alphaContext.lineTo(x, y);
+    }
+    if (stroke.points.length === 2) alphaContext.lineTo(
+      (crop.x + stroke.points[0] * crop.width) * width + 0.01,
+      (crop.y + stroke.points[1] * crop.height) * height,
+    );
+    alphaContext.stroke();
+    alphaContext.restore();
+  }
+  sourceContext.save();
+  sourceContext.globalCompositeOperation = "destination-in";
+  if (mask.feather > 0) sourceContext.filter = `blur(${Math.min(100, mask.feather) * scale}px)`;
+  sourceContext.drawImage(alpha, 0, 0);
+  sourceContext.restore();
+  return source;
+}
+
+function colorDetailFilter(adjustments: ImageAdjustments): Filter {
+  return (imageData) => {
+    const { data, width, height } = imageData;
+    const source = adjustments.sharpen > 0 ? new Uint8ClampedArray(data) : null;
+    const temperature = adjustments.temperature * 42;
+    const tint = adjustments.tint * 34;
+    const centerX = (width - 1) / 2;
+    const centerY = (height - 1) / 2;
+    const maximumDistance = Math.sqrt(centerX * centerX + centerY * centerY) || 1;
+    const clamp = (value: number) => Math.min(255, Math.max(0, value));
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const index = (y * width + x) * 4;
+        let red = data[index] + temperature + tint * 0.55;
+        let green = data[index + 1] - Math.abs(tint) * 0.42;
+        let blue = data[index + 2] - temperature + tint * 0.55;
+        if (source && x > 0 && y > 0 && x < width - 1 && y < height - 1) {
+          const strength = adjustments.sharpen * 0.7;
+          const top = index - width * 4;
+          const bottom = index + width * 4;
+          for (let channel = 0; channel < 3; channel += 1) {
+            const sharpened = source[index + channel] * (1 + strength * 4)
+              - source[top + channel] * strength
+              - source[bottom + channel] * strength
+              - source[index - 4 + channel] * strength
+              - source[index + 4 + channel] * strength;
+            if (channel === 0) red = sharpened + temperature + tint * 0.55;
+            if (channel === 1) green = sharpened - Math.abs(tint) * 0.42;
+            if (channel === 2) blue = sharpened - temperature + tint * 0.55;
+          }
+        }
+        if (adjustments.vignette > 0) {
+          const distance = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2) / maximumDistance;
+          const shade = Math.max(0, (distance - 0.34) / 0.66) ** 1.7 * adjustments.vignette;
+          red *= 1 - shade * 0.82;
+          green *= 1 - shade * 0.82;
+          blue *= 1 - shade * 0.82;
+        }
+        data[index] = clamp(red);
+        data[index + 1] = clamp(green);
+        data[index + 2] = clamp(blue);
+      }
+    }
+  };
 }
 
 export function applyImageEdits(
@@ -224,6 +339,7 @@ export function applyImageEdits(
   if (adjustments.brightness !== 0) filters.push(Konva.Filters.Brighten);
   if (adjustments.contrast !== 0) filters.push(Konva.Filters.Contrast);
   if (adjustments.saturation !== 0) filters.push(Konva.Filters.HSL);
+  if (adjustments.temperature !== 0 || adjustments.tint !== 0 || adjustments.sharpen > 0 || adjustments.vignette > 0) filters.push(colorDetailFilter(adjustments));
   if (adjustments.blur > 0) filters.push(Konva.Filters.Blur);
   if (adjustments.grayscale) filters.push(Konva.Filters.Grayscale);
   if (adjustments.sepia) filters.push(Konva.Filters.Sepia);
@@ -390,14 +506,31 @@ async function createBlurRegionNode(
   source?: Konva.Container,
 ): Promise<Konva.Shape> {
   if (!source) return createShapeNode(node);
-  source.draw();
-  const snapshot = source.toCanvas({
-    x: node.x,
-    y: node.y,
-    width: Math.max(1, node.width),
-    height: Math.max(1, node.height),
-    pixelRatio: 1,
-  });
+  const transform = source.getAbsoluteTransform();
+  const topLeft = transform.point({ x: node.x, y: node.y });
+  const topRight = transform.point({ x: node.x + node.width, y: node.y });
+  const bottomLeft = transform.point({ x: node.x, y: node.y + node.height });
+  const cropWidth = Math.max(1, Math.hypot(topRight.x - topLeft.x, topRight.y - topLeft.y));
+  const cropHeight = Math.max(1, Math.hypot(bottomLeft.x - topLeft.x, bottomLeft.y - topLeft.y));
+  const sourceLayer = source.getLayer();
+  const sourceWasVisible = sourceLayer?.visible() ?? true;
+  let snapshot: HTMLCanvasElement;
+  try {
+    // Project renders are assembled on a hidden staging layer. Konva skips
+    // hidden ancestors when rasterizing, so expose that layer only for this
+    // synchronous offscreen capture and restore it before the browser paints.
+    if (sourceLayer && !sourceWasVisible) sourceLayer.visible(true);
+    source.draw();
+    snapshot = source.toCanvas({
+      x: topLeft.x,
+      y: topLeft.y,
+      width: cropWidth,
+      height: cropHeight,
+      pixelRatio: 1,
+    });
+  } finally {
+    if (sourceLayer && !sourceWasVisible) sourceLayer.visible(false);
+  }
   const blur = new Konva.Image({
     ...commonAttributes(node),
     image: snapshot,
@@ -405,7 +538,7 @@ async function createBlurRegionNode(
     designShape: node.shape,
   });
   blur.cache({ pixelRatio: 1 });
-  blur.blurRadius(18);
+  blur.blurRadius(28);
   blur.filters([Konva.Filters.Blur]);
   return blur;
 }
@@ -443,13 +576,16 @@ export async function designNodeToKonva(
       normalizedCrop: { ...node.crop },
       imageAdjustments: { ...node.adjustments },
       imagePresentation: cloneImagePresentation(node.presentation),
+      imageMask: cloneImageMask(node.mask),
       missingAsset: true,
     });
   }
+  const image = await loadImage(asset.blob);
   const imageNode = new Konva.Image({
     ...commonAttributes(node),
-    image: await loadImage(asset.blob),
+    image: createMaskedImageSource(image, node.crop, node.mask),
     assetId: node.assetId,
+    imageMask: cloneImageMask(node.mask),
   });
   applyImageEdits(imageNode, node.crop, node.adjustments);
   applyImagePresentation(imageNode, node.presentation);
@@ -470,6 +606,8 @@ function readCommon(node: Konva.Node) {
     opacity: node.opacity(),
     visible: node.visible(),
     locked: Boolean(node.getAttr("designLocked")),
+    ...(node.getAttr("designGroupId") ? { groupId: String(node.getAttr("designGroupId")) } : {}),
+    blendMode: (node.globalCompositeOperation() || "source-over") as DesignNode["blendMode"],
   };
 }
 
@@ -487,6 +625,7 @@ export function konvaNodeToDesign(node: Konva.Node): DesignNode {
       fontStyle: text.fontStyle(),
       align: text.align() as TextDesignNode["align"],
       lineHeight: text.lineHeight(),
+      shadow: cloneObjectShadow(node.getAttr("designShadow")),
     } satisfies TextDesignNode;
   }
   if (kind === "shape") {
@@ -502,6 +641,7 @@ export function konvaNodeToDesign(node: Konva.Node): DesignNode {
       shape: shapeKind,
       fill: String(node.getAttr("designFill") || shape.fill() || shape.stroke() || "#111111"),
       cornerRadius: shapeKind === "rounded-rect" && node instanceof Konva.Rect ? Number(node.cornerRadius()) : 0,
+      shadow: cloneObjectShadow(node.getAttr("designShadow")),
     } satisfies ShapeDesignNode;
   }
   return {
@@ -511,6 +651,7 @@ export function konvaNodeToDesign(node: Konva.Node): DesignNode {
     crop: { ...(node.getAttr("normalizedCrop") ?? FULL_IMAGE_CROP) },
     adjustments: { ...(node.getAttr("imageAdjustments") ?? DEFAULT_IMAGE_ADJUSTMENTS) },
     presentation: cloneImagePresentation(node.getAttr("imagePresentation") ?? DEFAULT_IMAGE_PRESENTATION),
+    mask: cloneImageMask(node.getAttr("imageMask") ?? DEFAULT_IMAGE_MASK),
   } satisfies ImageDesignNode;
 }
 

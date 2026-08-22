@@ -8,6 +8,6 @@ document.querySelector("#capture").addEventListener("click", async () => {
 });
 
 document.querySelector("#open").addEventListener("click", async () => {
-  await chrome.tabs.create({ url: chrome.runtime.getURL("app/index.html") });
+  await chrome.tabs.create({ url: chrome.runtime.getURL("app/app.html") });
   window.close();
 });

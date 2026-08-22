@@ -2,10 +2,12 @@ import { newId, normalizeProject, type DesignNode, type GlassWareProject } from 
 import {
   dataUrlToBlob,
   listAssets,
+  listComponents,
   listFontAssets,
   type StoredAsset,
   type StoredFontAsset,
   type StoredFontFace,
+  type StoredComponent,
 } from "./storage";
 
 const BUNDLE_SCHEMA = "glassware.bundle.v1" as const;
@@ -29,6 +31,7 @@ export interface ProjectBundle {
   project: GlassWareProject;
   assets: PortableAsset[];
   fonts?: PortableFont[];
+  components?: StoredComponent[];
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -42,7 +45,7 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 
 export async function buildProjectBundle(project: GlassWareProject): Promise<ProjectBundle> {
   const assets = await listAssets(project.id);
-  const usedFamilies = new Set(project.objects.filter((object) => object.kind === "text").map((object) => object.fontFamily));
+  const usedFamilies = new Set(project.pages.flatMap((page) => page.objects.filter((object) => object.kind === "text").map((object) => object.fontFamily)));
   const fonts = (await listFontAssets()).filter((font) => usedFamilies.has(font.family));
   return {
     schemaVersion: BUNDLE_SCHEMA,
@@ -55,6 +58,7 @@ export async function buildProjectBundle(project: GlassWareProject): Promise<Pro
       ...font,
       faces: await Promise.all(font.faces.map(async ({ blob, ...face }) => ({ ...face, dataUrl: await blobToDataUrl(blob) }))),
     }))),
+    components: await listComponents(project.id),
   };
 }
 
@@ -66,6 +70,7 @@ export async function readProjectBundle(text: string): Promise<{
   project: GlassWareProject;
   assets: StoredAsset[];
   fonts: StoredFontAsset[];
+  components: StoredComponent[];
 }> {
   const parsed = JSON.parse(text) as Partial<ProjectBundle>;
   if (![BUNDLE_SCHEMA, LEGACY_BUNDLE_SCHEMA].includes(String(parsed.schemaVersion)) || !parsed.project || !Array.isArray(parsed.assets)) {
@@ -76,16 +81,45 @@ export async function readProjectBundle(text: string): Promise<{
 
   const projectId = newId();
   const assetIds = new Map(parsed.assets.map((asset) => [asset.id, newId()]));
+  const historicalPageIds = source.revisions.flatMap((revision) => revision.aiProjectTransaction
+    ? [...revision.aiProjectTransaction.before.pages, ...revision.aiProjectTransaction.after.pages].map((page) => page.id)
+    : []);
+  const pageIds = new Map([...new Set([...source.pages.map((page) => page.id), ...historicalPageIds])].map((pageId) => [pageId, newId()]));
+  const revisionIds = new Map(source.revisions.map((revision) => [revision.id, newId()]));
+  const aiSessionIds = new Map(source.revisions.flatMap((revision) => [revision.aiProjectTransaction?.id, revision.aiSessionId].filter((id): id is string => Boolean(id))).map((id) => [id, newId()]));
   const objects = source.objects.map((node) => remapNode(node, assetIds));
+  const remapDocumentState = (state: NonNullable<GlassWareProject["revisions"][number]["aiProjectTransaction"]>["before"]) => ({
+    activePageId: pageIds.get(state.activePageId) ?? state.activePageId,
+    pages: state.pages.map((page) => ({
+      ...page,
+      id: pageIds.get(page.id) ?? page.id,
+      objects: page.objects.map((node) => remapNode(node, assetIds)),
+      currentRevisionId: revisionIds.get(page.currentRevisionId) ?? page.currentRevisionId,
+    })),
+  });
   const revisions = source.revisions.map((revision) => ({
     ...revision,
-    id: newId(),
+    id: revisionIds.get(revision.id)!,
+    pageId: pageIds.get(revision.pageId) ?? revision.pageId,
     snapshot: {
       canvas: { ...revision.snapshot.canvas },
       objects: revision.snapshot.objects.map((node) => remapNode(node, assetIds)),
     },
+    ...(revision.aiProjectTransaction ? {
+      aiProjectTransaction: {
+        id: aiSessionIds.get(revision.aiProjectTransaction.id) ?? newId(),
+        before: remapDocumentState(revision.aiProjectTransaction.before),
+        after: remapDocumentState(revision.aiProjectTransaction.after),
+      },
+    } : {}),
+    ...(revision.aiSessionId ? { aiSessionId: aiSessionIds.get(revision.aiSessionId) ?? revision.aiSessionId } : {}),
   }));
-  const currentRevisionIndex = source.revisions.findIndex((revision) => revision.id === source.currentRevisionId);
+  const pages = source.pages.map((page) => ({
+    ...page,
+    id: pageIds.get(page.id)!,
+    objects: page.objects.map((node) => remapNode(node, assetIds)),
+    currentRevisionId: revisionIds.get(page.currentRevisionId) ?? page.currentRevisionId,
+  }));
   const importedAt = new Date().toISOString();
   const project: GlassWareProject = {
     ...source,
@@ -94,8 +128,10 @@ export async function readProjectBundle(text: string): Promise<{
     createdAt: importedAt,
     updatedAt: importedAt,
     objects,
+    pages,
+    activePageId: pageIds.get(source.activePageId) ?? pages[0].id,
     revisions,
-    currentRevisionId: revisions[Math.max(0, currentRevisionIndex)]?.id ?? revisions.at(-1)!.id,
+    currentRevisionId: revisionIds.get(source.currentRevisionId) ?? pages.find((page) => page.id === (pageIds.get(source.activePageId) ?? pages[0].id))?.currentRevisionId ?? revisions.at(-1)!.id,
   };
   const assets = await Promise.all(
     parsed.assets.map(async (asset) => {
@@ -120,7 +156,47 @@ export async function readProjectBundle(text: string): Promise<{
       return { ...metadata, mimeType: blob.type || metadata.mimeType, size: blob.size, blob };
     })),
   })));
-  return { project, assets, fonts };
+  const components = (parsed.components ?? []).map((component) => ({
+    ...component,
+    id: newId(),
+    projectId,
+    objects: component.objects.map((node) => remapNode(node, assetIds)),
+  }));
+  return { project, assets, fonts, components };
+}
+
+export async function restoreCloudProjectBundle(bundle: ProjectBundle): Promise<{
+  project: GlassWareProject;
+  assets: StoredAsset[];
+  fonts: StoredFontAsset[];
+  components: StoredComponent[];
+}> {
+  if (bundle.schemaVersion !== BUNDLE_SCHEMA || !bundle.project || !Array.isArray(bundle.assets)) {
+    throw new Error("This is not a valid GlassWare cloud project.");
+  }
+  const project = normalizeProject(bundle.project);
+  if (!project) throw new Error("The cloud project manifest is invalid.");
+  const assets = await Promise.all(bundle.assets.map(async (asset) => {
+    if (!asset.dataUrl || asset.projectId !== project.id) throw new Error("A cloud project asset is incomplete.");
+    const { dataUrl, ...metadata } = asset;
+    const blob = await dataUrlToBlob(dataUrl);
+    return {
+      ...metadata,
+      mimeType: blob.type || metadata.mimeType,
+      size: blob.size,
+      blob,
+    };
+  }));
+  const fonts = await Promise.all((bundle.fonts ?? []).map(async (font) => ({
+    ...font,
+    faces: await Promise.all(font.faces.map(async (face) => {
+      const { dataUrl, ...metadata } = face;
+      const blob = await dataUrlToBlob(dataUrl);
+      return { ...metadata, mimeType: blob.type || metadata.mimeType, size: blob.size, blob };
+    })),
+  })));
+  const components = (bundle.components ?? []).filter((component) => component.projectId === project.id);
+  return { project, assets, fonts, components };
 }
 
 export function downloadTextFile(contents: string, filename: string, type = "application/json"): void {

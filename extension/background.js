@@ -13,7 +13,7 @@ async function captureAndOpen(tab) {
   await chrome.storage.local.set({
     [CAPTURE_KEY]: { dataUrl, sourceUrl: tab.url, capturedAt: new Date().toISOString() },
   });
-  await chrome.tabs.create({ url: chrome.runtime.getURL("app/index.html") });
+  await chrome.tabs.create({ url: chrome.runtime.getURL("app/app.html") });
 }
 
 chrome.contextMenus.onClicked.addListener((_info, tab) => {

@@ -1,34 +1,53 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import Konva from "konva";
 import {
   Bold,
   BringToFront,
   AlignCenter,
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignHorizontalJustifyEnd,
+  AlignHorizontalJustifyStart,
+  AlignHorizontalSpaceBetween,
   AlignLeft,
   AlignRight,
+  AlignVerticalJustifyEnd,
+  AlignVerticalJustifyStart,
+  AlignVerticalSpaceBetween,
+  BoxSelect,
   ChevronDown,
   ChevronUp,
+  Cloud,
   Copy,
+  Crop,
   Download,
+  Eraser,
   Eye,
   EyeOff,
   ExternalLink,
   FilePlus2,
   Frame,
   FolderOpen,
+  FlipHorizontal2,
+  FlipVertical2,
   GripVertical,
+  Group,
+  Hand,
   ImagePlus,
-  PenTool,
+  Ruler,
   Replace,
   Italic,
+  LayoutTemplate,
   Layers3,
   Lock,
   LoaderCircle,
   MousePointer2,
   Palette,
+  Paintbrush,
   Plus,
   Redo2,
   RotateCcw,
+  RotateCw,
   Save,
   Search,
   SendToBack,
@@ -37,6 +56,7 @@ import {
   Trash2,
   Type,
   Undo2,
+  Ungroup,
   Unlock,
   UserRound,
   Upload,
@@ -45,19 +65,27 @@ import {
 } from "lucide-react";
 import {
   CANVAS_PRESETS,
+  BLEND_MODES,
   DEFAULT_ARTWORK_PRESENTATION,
   DEFAULT_IMAGE_ADJUSTMENTS,
+  DEFAULT_IMAGE_MASK,
   DEFAULT_IMAGE_PRESENTATION,
   FULL_IMAGE_CROP,
   canRedo,
   canUndo,
+  activatePage,
+  addProjectPage,
   commitSnapshot,
   cloneArtworkPresentation,
+  cloneImageMask,
   cloneImagePresentation,
   createProject,
   currentRevisionIndex,
+  deleteProjectPage,
   newId,
   redoProject,
+  renameProjectPage,
+  reorderProjectPage,
   setCanvasPreset,
   undoProject,
   type ArtworkPresentation,
@@ -66,6 +94,7 @@ import {
   type DesignNode,
   type ImageAdjustments,
   type ImageDesignNode,
+  type ImageMask,
   type ImagePresentation,
   type GlassWareProject,
   type NormalizedCrop,
@@ -88,25 +117,59 @@ import {
   consumeExtensionCapture,
   createStoredAsset,
   dataUrlToBlob,
+  deleteProject,
+  listAssets,
   listProjects,
   listFontAssets,
+  listBrandKits,
+  listComponents,
+  listAiRuns,
   loadAsset,
   loadProject,
   saveAsset,
   saveFontAsset,
+  saveBrandKit,
+  saveComponent,
+  saveAiRun,
   saveProject,
   type AssetSource,
+  type StoredAsset,
+  type StoredBrandKit,
+  type StoredComponent,
   type StoredFontAsset,
+  type StoredAiPassReceipt,
+  type StoredAiRun,
 } from "./lib/storage";
-import { buildProjectBundle, downloadTextFile, readProjectBundle, safeFilename } from "./lib/bundle";
-import { PHOTO_PRESETS, centerCropForAspect, fitDisplayBoxToAspect, type PhotoPreset } from "./lib/image-edits";
-import { AccountPanel } from "./components/AccountPanel";
+import { buildProjectBundle, downloadTextFile, readProjectBundle, restoreCloudProjectBundle, safeFilename } from "./lib/bundle";
 import {
-  StudioPanel,
-  type ArtworkPresentationPatch,
-  type ImagePresentationPatch,
-  type StudioTarget,
-} from "./components/StudioPanel";
+  commitAiProjectSession,
+  findLatestRedoableAiRevision,
+  findLatestUndoableAiRevision,
+  redoLatestAiSession,
+  undoLatestAiSession,
+} from "./lib/ai-undo";
+import {
+  DEFAULT_AI_MODEL,
+  DEFAULT_AI_REASONING_EFFORT,
+  type AiAttachment,
+  type AiEditPlan,
+} from "./lib/account-connections";
+import type { CloudProjectArchive, CloudProjectMetadata } from "./lib/account-connections";
+import { PHOTO_PRESETS, centerCropForAspect, fitDisplayBoxToAspect, type PhotoPreset } from "./lib/image-edits";
+import { moveCrop, resizeCrop, type CropHandle } from "./lib/image-geometry";
+import { assessExport, type ExportAssetDetail, type ExportFormat, type ExportSettings } from "./lib/export-qa";
+import {
+  alignObjects,
+  distributeObjects,
+  groupObjects,
+  selectionForObject,
+  ungroupObjects,
+  type Alignment,
+  type AlignmentReference,
+  type DistributionAxis,
+} from "./lib/editor-commands";
+import { AccountPanel } from "./components/AccountPanel";
+import type { ArtworkPresentationPatch, ImagePresentationPatch, StudioTarget } from "./components/StudioPanel";
 import {
   applyScreenshotStudioOperations,
   findBackdropPreset,
@@ -117,8 +180,7 @@ import {
   createStudioPlaygroundImage,
   createStudioPlaygroundProject,
 } from "./lib/studio-playground";
-import { AiConnectionsPanel } from "./components/AiConnectionsPanel";
-import { AiSettingsModal } from "./components/AiSettingsModal";
+import type { AiAgentProgress, AiAgentReceipt, AiAgentRequest } from "./components/AiConnectionsPanel";
 import { SignInModal } from "./components/SignInModal";
 import { useAccountConnections } from "./hooks/use-account-connections";
 import {
@@ -134,12 +196,25 @@ import {
   downloadGoogleFont,
   registerFont,
 } from "./lib/fonts";
+import { applyTemplate, GLASSWARE_TEMPLATES } from "./lib/templates";
+import { deleteBrandKit, deleteComponent } from "./lib/storage";
+import { aiQualityFeedback, assessAiQuality } from "./lib/ai-quality";
+import { buildImagePdf, type PdfImagePage } from "./lib/pdf-export";
+import { renderRegionEditMask, renderRegionEditSource } from "./lib/region-edit";
+import type { RegionEditRequest } from "./components/RegionEditModal";
+import { hostedGlassWareUrl, isExtensionSurface, type HostedEditorIntent } from "./lib/runtime-surface";
+
+const StudioPanel = lazy(() => import("./components/StudioPanel").then((module) => ({ default: module.StudioPanel })));
+const AiConnectionsPanel = lazy(() => import("./components/AiConnectionsPanel").then((module) => ({ default: module.AiConnectionsPanel })));
+const AiSettingsModal = lazy(() => import("./components/AiSettingsModal").then((module) => ({ default: module.AiSettingsModal })));
+const RegionEditModal = lazy(() => import("./components/RegionEditModal").then((module) => ({ default: module.RegionEditModal })));
 
 const COLOR_SWATCHES = [
   "#111111", "#ffffff", "#d9d9d9", "#8b8b8b", "#ff5d42", "#ffb000",
   "#ffe14d", "#35a36f", "#24a8a8", "#3f7fff", "#7454d6", "#e6499a",
 ];
 const MAX_STAGE_SIZE = 640;
+const MAX_AI_VISUAL_PASSES = 6;
 
 const SHAPE_OPTIONS: Array<{ kind: ShapeKind; label: string }> = [
   { kind: "rect", label: "Rectangle" },
@@ -152,28 +227,57 @@ const SHAPE_OPTIONS: Array<{ kind: ShapeKind; label: string }> = [
   { kind: "star", label: "Star" },
   { kind: "heart", label: "Heart" },
   { kind: "speech-bubble", label: "Speech" },
-  { kind: "line", label: "Line" },
-  { kind: "arrow", label: "Arrow" },
-  { kind: "curved-arrow", label: "Curved arrow" },
-  { kind: "blur", label: "Blur region" },
-  { kind: "redact", label: "Redact" },
 ];
 
 const ANNOTATION_OPTIONS: Array<{ kind: ShapeKind; label: string; note: string }> = [
   { kind: "arrow", label: "Arrow", note: "Point to a detail" },
   { kind: "curved-arrow", label: "Curved arrow", note: "Call out around content" },
-  { kind: "rect", label: "Rectangle", note: "Box an interface area" },
-  { kind: "ellipse", label: "Circle", note: "Ring a focal point" },
+  { kind: "rect", label: "Highlight box", note: "Tint an interface area" },
+  { kind: "ellipse", label: "Highlight circle", note: "Tint a focal point" },
   { kind: "line", label: "Line", note: "Divide or underline" },
-  { kind: "blur", label: "Blur", note: "Visually soften an area" },
-  { kind: "redact", label: "Redact", note: "Safely cover private data" },
+  { kind: "blur", label: "Blur region", note: "Blur the layers underneath" },
+  { kind: "redact", label: "Secure redact", note: "Opaque cover for private data" },
+];
+
+const INSPECTOR_SHAPE_OPTIONS: Array<{ kind: ShapeKind; label: string }> = [
+  ...SHAPE_OPTIONS,
+  { kind: "line", label: "Line" },
+  { kind: "arrow", label: "Arrow" },
+  { kind: "curved-arrow", label: "Curved arrow" },
+  { kind: "blur", label: "Blur region" },
+  { kind: "redact", label: "Secure redact" },
 ];
 
 type TextPreset = "heading" | "subheading" | "body";
 
 type SaveState = "saving" | "saved" | "error";
-type ToolName = "Select" | "Images" | "Studio" | "Annotate" | "Text" | "Shapes" | "Layers" | "Files" | "AI" | "Account";
+type CloudSaveState = "local" | "syncing" | "synced" | "retrying" | "conflict";
+type ToolName = "Select" | "Images" | "Studio" | "Text" | "Shapes" | "Layers" | "Library" | "Files" | "Account";
+type LibraryTab = "templates" | "brand" | "components";
 type LayerDropTarget = { id: string; edge: "before" | "after" };
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+}
+
+function cloneComponentObjects(objects: DesignNode[], offset = 0): DesignNode[] {
+  const groups = new Map<string, string>();
+  return objects.map((object) => {
+    const groupId = object.groupId
+      ? groups.get(object.groupId) ?? (() => { const id = newId(); groups.set(object.groupId!, id); return id; })()
+      : undefined;
+    const common = { ...object, id: newId(), x: object.x + offset, y: object.y + offset, ...(groupId ? { groupId } : {}) };
+    return object.kind === "image"
+      ? { ...common, crop: { ...object.crop }, adjustments: { ...object.adjustments }, presentation: cloneImagePresentation(object.presentation), mask: cloneImageMask(object.mask) }
+      : { ...common, shadow: object.shadow ? { ...object.shadow } : undefined };
+  });
+}
+
+function normalizedAiAttachmentName(value: string): string {
+  return value.normalize("NFKC").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^[-.]+/, "").slice(0, 100).toLocaleLowerCase();
+}
 
 function artworkLayout(canvas: CanvasSettings, presentation: ArtworkPresentation) {
   if (!presentation.enabled) return { x: 0, y: 0, scale: 1 };
@@ -270,6 +374,7 @@ function Editor({
   initialProject: GlassWareProject;
   replaceProject: (project: GlassWareProject) => void;
 }) {
+  const extensionSurface = isExtensionSurface();
   const canvasElement = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
   const layerRef = useRef<Konva.Layer | null>(null);
@@ -279,11 +384,18 @@ function Editor({
   const artworkFrameRef = useRef<Konva.Group | null>(null);
   const transformerRef = useRef<Konva.Transformer | null>(null);
   const selectedNodeRef = useRef<Konva.Node | null>(null);
+  const selectedIdsRef = useRef<string[]>(initialProject.objects[0]?.id ? [initialProject.objects[0].id] : []);
+  const marqueeRectRef = useRef<Konva.Rect | null>(null);
+  const marqueeStartRef = useRef<{ x: number; y: number; additive: boolean } | null>(null);
+  const multiDragRef = useRef<{ anchorId: string; anchorX: number; anchorY: number; positions: Map<string, { x: number; y: number }> } | null>(null);
   const projectRef = useRef(initialProject);
   const zoomRef = useRef(1);
   const renderVersionRef = useRef(0);
   const zoomVersionRef = useRef(0);
   const saveVersionRef = useRef(0);
+  const cloudSyncTimerRef = useRef<number | null>(null);
+  const cloudSyncQueueRef = useRef(Promise.resolve());
+  const billingIntentRef = useRef("");
   const liveArtworkPresentationRef = useRef(
     cloneArtworkPresentation(initialProject.canvas.presentation ?? DEFAULT_ARTWORK_PRESENTATION),
   );
@@ -293,9 +405,13 @@ function Editor({
   const fontInput = useRef<HTMLInputElement>(null);
   const projectInput = useRef<HTMLInputElement>(null);
   const canvasViewport = useRef<HTMLElement>(null);
+  const canvasPanRef = useRef<{ pointerId: number; clientX: number; clientY: number; scrollLeft: number; scrollTop: number } | null>(null);
+  const spacePanRef = useRef(false);
   const inlineEditorCleanupRef = useRef<(() => void) | null>(null);
   const [project, setProject] = useState(initialProject);
   const [selectedId, setSelectedId] = useState<string | null>(initialProject.objects[0]?.id ?? null);
+  const [selectedIds, setSelectedIds] = useState<string[]>(initialProject.objects[0]?.id ? [initialProject.objects[0].id] : []);
+  const [alignmentReference, setAlignmentReference] = useState<AlignmentReference>("selection");
   const [activeTool, setActiveTool] = useState<ToolName>(
     initialProject.name === STUDIO_PLAYGROUND_NAME ? "Studio" : "Select",
   );
@@ -303,24 +419,104 @@ function Editor({
     initialProject.objects[0]?.kind === "image" ? "image" : "artwork",
   );
   const [saveState, setSaveState] = useState<SaveState>("saved");
+  const [cloudSaveState, setCloudSaveState] = useState<CloudSaveState>("local");
+  const [cloudProjects, setCloudProjects] = useState<CloudProjectMetadata[]>([]);
   const [message, setMessage] = useState("");
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [recentProjects, setRecentProjects] = useState<GlassWareProject[]>([]);
+  const [projectStorageBytes, setProjectStorageBytes] = useState<Map<string, number>>(new Map());
+  const [libraryTab, setLibraryTab] = useState<LibraryTab>("templates");
+  const [brandKits, setBrandKits] = useState<StoredBrandKit[]>([]);
+  const [components, setComponents] = useState<StoredComponent[]>([]);
   const [zoom, setZoom] = useState(1);
+  const [panMode, setPanMode] = useState(false);
+  const [spacePanActive, setSpacePanActive] = useState(false);
+  const [isPanningCanvas, setIsPanningCanvas] = useState(false);
+  const [selectedAsset, setSelectedAsset] = useState<StoredAsset | null>(null);
   const [selectedAssetSource, setSelectedAssetSource] = useState<AssetSource | null>(null);
+  const [cropEditorOpen, setCropEditorOpen] = useState(false);
+  const [maskEditorOpen, setMaskEditorOpen] = useState(false);
+  const [regionEditorOpen, setRegionEditorOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("png");
+  const [exportAssets, setExportAssets] = useState<Map<string, ExportAssetDetail>>(new Map());
   const [fontAssets, setFontAssets] = useState<StoredFontAsset[]>([]);
   const [fontLoading, setFontLoading] = useState<string | null>(null);
   const [draggedLayerId, setDraggedLayerId] = useState<string | null>(null);
   const [layerDropTarget, setLayerDropTarget] = useState<LayerDropTarget | null>(null);
   const [signInOpen, setSignInOpen] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  const [aiWidgetOpen, setAiWidgetOpen] = useState(false);
+  const [aiRunActive, setAiRunActive] = useState(false);
   const accountConnections = useAccountConnections();
-  const selectedObject = project.objects.find((object) => object.id === selectedId) ?? null;
+  const accountConnectionsRef = useRef(accountConnections);
+  accountConnectionsRef.current = accountConnections;
+  const selectedObjects = project.objects.filter((object) => selectedIds.includes(object.id));
+  const selectedObject = selectedIds.length === 1 ? selectedObjects[0] ?? null : null;
   const selectedAssetId = selectedObject?.kind === "image" ? selectedObject.assetId : null;
   const fitScale = Math.min(MAX_STAGE_SIZE / project.canvas.width, MAX_STAGE_SIZE / project.canvas.height);
   const viewScale = fitScale * zoom;
   const stageWidth = Math.round(project.canvas.width * viewScale);
   const stageHeight = Math.round(project.canvas.height * viewScale);
+
+  function openHostedEditor(intent: HostedEditorIntent) {
+    const opened = window.open(hostedGlassWareUrl(intent), "_blank", "noopener,noreferrer");
+    setMessage(opened
+      ? `${intent === "ai" ? "AI" : "Account"} opened securely in the GlassWare web app. Your local extension project stays on this device.`
+      : "Allow pop-ups for GlassWare, then try again.");
+  }
+
+  useEffect(() => {
+    if (extensionSurface) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("from") !== "extension") return;
+    const intent = url.searchParams.get("intent");
+    if (intent === "account") setSignInOpen(true);
+    if (intent === "ai") setAiWidgetOpen(true);
+    url.searchParams.delete("from");
+    url.searchParams.delete("intent");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [extensionSurface]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const billingReturn = url.searchParams.get("billing");
+    if (billingReturn === "success" || billingReturn === "return") {
+      const returnKey = `return:${billingReturn}:${url.searchParams.get("session_id") ?? ""}`;
+      if (billingIntentRef.current !== returnKey) {
+        billingIntentRef.current = returnKey;
+        setActiveTool("Account");
+        setMessage(billingReturn === "success" ? "Your checkout is complete. Refreshing your GlassWare plan…" : "Billing settings updated.");
+        if (accountConnections.snapshot.account?.mode === "authenticated") void accountConnections.refreshBilling();
+        url.searchParams.delete("billing");
+        url.searchParams.delete("session_id");
+        window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+      }
+      return;
+    }
+
+    const plan = url.searchParams.get("subscribe");
+    const interval = url.searchParams.get("billing");
+    if ((plan !== "designer" && plan !== "director") || (interval !== "monthly" && interval !== "annual")) return;
+    setActiveTool("Account");
+    if (accountConnections.loading) return;
+    if (accountConnections.snapshot.account?.mode !== "authenticated") {
+      setSignInOpen(true);
+      return;
+    }
+    if (accountConnections.busy) return;
+    const intentKey = `${accountConnections.snapshot.account.id}:${plan}:${interval}`;
+    if (billingIntentRef.current === intentKey) return;
+    billingIntentRef.current = intentKey;
+    void accountConnections.startCheckout(plan, interval).then((started) => {
+      if (!started) billingIntentRef.current = "";
+    });
+  }, [
+    accountConnections.loading,
+    accountConnections.busy,
+    accountConnections.snapshot.account?.id,
+    accountConnections.snapshot.account?.mode,
+  ]);
 
   useEffect(() => {
     const selected = projectRef.current.objects.find((object) => object.id === selectedId);
@@ -330,11 +526,18 @@ function Editor({
   useEffect(() => {
     let cancelled = false;
     if (!selectedAssetId) {
+      setSelectedAsset(null);
       setSelectedAssetSource(null);
+      setCropEditorOpen(false);
+      setMaskEditorOpen(false);
+      setRegionEditorOpen(false);
       return;
     }
     void loadAsset(selectedAssetId).then((asset) => {
-      if (!cancelled) setSelectedAssetSource(asset?.source ?? null);
+      if (!cancelled) {
+        setSelectedAsset(asset);
+        setSelectedAssetSource(asset?.source ?? null);
+      }
     });
     return () => {
       cancelled = true;
@@ -347,10 +550,116 @@ function Editor({
       await Promise.all(fonts.map((font) => registerFont(font).catch((error) => console.error(error))));
       if (cancelled) return;
       setFontAssets(fonts);
-      await renderProject(projectRef.current, selectedId);
+      await renderProject(projectRef.current, selectedIdsRef.current);
     });
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([listBrandKits(), listComponents(initialProject.id)]).then(([kits, savedComponents]) => {
+      if (cancelled) return;
+      setBrandKits(kits);
+      setComponents(savedComponents);
+    });
+    return () => { cancelled = true; };
+  }, [initialProject.id]);
+
+  useEffect(() => {
+    if (accountConnections.loading) return;
+    let cancelled = false;
+    void (async () => {
+      const interrupted = (await listAiRuns(initialProject.id)).filter((run) => run.status === "running");
+      if (cancelled || !interrupted.length) return;
+      for (const run of interrupted) {
+        if (run.activeJobId && accountConnections.snapshot.account?.mode === "authenticated") {
+          await accountConnections.cancelAiJob(run.activeJobId).catch(() => undefined);
+        }
+        await saveAiRun({
+          ...run,
+          status: "cancelled",
+          activeJobId: undefined,
+          updatedAt: new Date().toISOString(),
+          finishedAt: new Date().toISOString(),
+          receipts: [...run.receipts, {
+            pass: Math.max(1, run.currentPass),
+            status: "cancelled",
+            startedAt: run.updatedAt,
+            finishedAt: new Date().toISOString(),
+            summary: "Interrupted browser session recovered safely.",
+            assessment: "The last committed project revision was preserved and no partial draft was restored.",
+            appliedOperations: [],
+            skippedOperations: [],
+            qualityFindings: [],
+          }],
+        });
+      }
+      if (!cancelled) setMessage("An interrupted AI run was recovered safely. No partial edits were kept.");
+    })();
+    return () => { cancelled = true; };
+  }, [accountConnections.loading, accountConnections.snapshot.account?.id, initialProject.id]);
+
+  useEffect(() => {
+    const account = accountConnections.snapshot.account;
+    if (account?.mode !== "authenticated" || accountConnections.snapshot.billing.cloudAccess === "none") {
+      setCloudProjects([]);
+      setCloudSaveState("local");
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const remote = await accountConnections.listCloudProjects();
+        if (cancelled) return;
+        setCloudProjects(remote);
+        if (!accountConnections.snapshot.syncEnabled || accountConnections.snapshot.billing.cloudAccess !== "read_write") return;
+        const local = await listProjects();
+        for (const item of local) {
+          if (cancelled) return;
+          const cloud = remote.find((entry) => entry.id === item.id);
+          if (!cloud || item.updatedAt > cloud.updatedAt) await syncProjectToCloud(item);
+        }
+        if (!cancelled && local.some((item) => remote.some((entry) => entry.id === item.id && entry.updatedAt >= item.updatedAt))) {
+          setCloudSaveState("synced");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error(error);
+          setCloudSaveState("retrying");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accountConnections.snapshot.account?.id, accountConnections.snapshot.syncEnabled, accountConnections.snapshot.billing.cloudAccess]);
+
+  useEffect(() => {
+    function isTyping(target: EventTarget | null) {
+      return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.code !== "Space" || isTyping(event.target) || event.repeat) return;
+      event.preventDefault();
+      spacePanRef.current = true;
+      setSpacePanActive(true);
+    }
+    function releaseSpace() {
+      spacePanRef.current = false;
+      setSpacePanActive(false);
+    }
+    function onKeyUp(event: KeyboardEvent) {
+      if (event.code === "Space") releaseSpace();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", releaseSpace);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", releaseSpace);
     };
   }, []);
 
@@ -359,15 +668,140 @@ function Editor({
     setProject(next);
   }
 
-  async function persist(next = projectRef.current) {
+  async function persist(next = projectRef.current, immediateCloud = false) {
     const version = ++saveVersionRef.current;
     setSaveState("saving");
     try {
       await saveProject(next);
       if (version === saveVersionRef.current) setSaveState("saved");
+      queueCloudProjectSync(next, immediateCloud);
     } catch (error) {
       console.error(error);
       if (version === saveVersionRef.current) setSaveState("error");
+    }
+  }
+
+  function createProjectThumbnail(projectId: string): string | undefined {
+    if (projectId !== projectRef.current.id) return undefined;
+    const stage = stageRef.current;
+    if (!stage) return undefined;
+    const selection = [...selectedIdsRef.current];
+    const primary = selectedId;
+    transformerRef.current?.nodes([]);
+    layerRef.current?.draw();
+    const pixelRatio = Math.min(1, 360 / Math.max(stage.width(), stage.height()));
+    const dataUrl = stage.toDataURL({ mimeType: "image/jpeg", quality: 0.78, pixelRatio });
+    selectByIds(selection, primary);
+    return dataUrl;
+  }
+
+  async function saveCloudBundleLocally(archive: CloudProjectArchive) {
+    const restored = await restoreCloudProjectBundle(archive.bundle);
+    for (const asset of restored.assets) await saveAsset(asset);
+    for (const font of restored.fonts) {
+      await registerFont(font);
+      await saveFontAsset(font);
+    }
+    for (const component of restored.components) await saveComponent(component);
+    await saveProject(restored.project);
+    return restored.project;
+  }
+
+  async function preserveCloudConflict(localBundle: Awaited<ReturnType<typeof buildProjectBundle>>, remote: CloudProjectArchive) {
+    const preserved = await readProjectBundle(JSON.stringify(localBundle));
+    for (const asset of preserved.assets) await saveAsset(asset);
+    for (const font of preserved.fonts) {
+      await registerFont(font);
+      await saveFontAsset(font);
+    }
+    for (const component of preserved.components) await saveComponent(component);
+    await saveProject(preserved.project);
+    const remoteProject = await saveCloudBundleLocally(remote);
+    setMessage(`A newer cloud version was restored. Your device edits were preserved as “${preserved.project.name}”.`);
+    setCloudSaveState("conflict");
+    setRecentProjects(await listProjects());
+    if (remoteProject.id === projectRef.current.id) replaceProject(remoteProject);
+  }
+
+  async function syncProjectToCloud(next: GlassWareProject) {
+    const model = accountConnectionsRef.current;
+    if (model.snapshot.account?.mode !== "authenticated" || !model.snapshot.syncEnabled || model.snapshot.billing.cloudAccess !== "read_write") {
+      setCloudSaveState("local");
+      return;
+    }
+    setCloudSaveState("syncing");
+    const operation = cloudSyncQueueRef.current.then(async () => {
+      const bundle = await buildProjectBundle(next);
+      const thumbnailDataUrl = createProjectThumbnail(next.id);
+      const archive: CloudProjectArchive = {
+        id: next.id,
+        name: next.name,
+        createdAt: next.createdAt,
+        updatedAt: next.updatedAt,
+        currentRevisionId: next.currentRevisionId,
+        ...(thumbnailDataUrl ? { thumbnailDataUrl } : {}),
+        bundle,
+      };
+      const receipt = await accountConnectionsRef.current.saveCloudProject(archive);
+      setCloudProjects((current) => [receipt.project, ...current.filter((entry) => entry.id !== receipt.project.id)]
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)));
+      if (receipt.status === "kept_remote" && receipt.archive) {
+        await preserveCloudConflict(bundle, receipt.archive);
+        return;
+      }
+      setCloudSaveState("synced");
+    });
+    cloudSyncQueueRef.current = operation.catch(() => undefined);
+    try {
+      await operation;
+    } catch (error) {
+      console.error(error);
+      setCloudSaveState("retrying");
+      setMessage(error instanceof Error ? error.message : "Cloud project sync will retry after the next edit.");
+    }
+  }
+
+  function queueCloudProjectSync(next: GlassWareProject, immediate = false) {
+    const model = accountConnectionsRef.current;
+    if (model.snapshot.account?.mode !== "authenticated" || !model.snapshot.syncEnabled || model.snapshot.billing.cloudAccess !== "read_write") {
+      setCloudSaveState("local");
+      return;
+    }
+    if (cloudSyncTimerRef.current !== null) window.clearTimeout(cloudSyncTimerRef.current);
+    setCloudSaveState("syncing");
+    if (immediate) {
+      cloudSyncTimerRef.current = null;
+      void syncProjectToCloud(next);
+      return;
+    }
+    cloudSyncTimerRef.current = window.setTimeout(() => {
+      cloudSyncTimerRef.current = null;
+      void syncProjectToCloud(next);
+    }, 900);
+  }
+
+  async function restoreCloudProject(projectId: string) {
+    try {
+      setCloudSaveState("syncing");
+      const archive = await accountConnectionsRef.current.loadCloudProject(projectId);
+      const restored = await saveCloudBundleLocally(archive);
+      setCloudSaveState("synced");
+      setRecentProjects(await listProjects());
+      replaceProject(restored);
+    } catch (error) {
+      console.error(error);
+      setCloudSaveState("retrying");
+      setMessage(error instanceof Error ? error.message : "The cloud project could not be restored.");
+    }
+  }
+
+  async function removeCloudProject(projectId: string) {
+    try {
+      await accountConnectionsRef.current.deleteCloudProject(projectId);
+      setCloudProjects((current) => current.filter((entry) => entry.id !== projectId));
+      setMessage("Cloud copy removed. The project remains on this device.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "The cloud copy could not be removed.");
     }
   }
 
@@ -380,18 +814,40 @@ function Editor({
     };
   }
 
-  function selectById(designId: string | null) {
+  function selectByIds(designIds: string[], primaryId: string | null = designIds.at(-1) ?? null) {
     const layer = layerRef.current;
     const transformer = transformerRef.current;
     if (!layer || !transformer) return;
-    const node = designId ? findDesignNode(layer, designId) : null;
-    selectedNodeRef.current = node;
-    transformer.nodes(node?.visible() ? [node] : []);
-    const locked = Boolean(node?.getAttr("designLocked"));
+    const ids = [...new Set(designIds)].filter((id) => projectRef.current.objects.some((object) => object.id === id));
+    const nodes = ids
+      .map((id) => findDesignNode(layer, id))
+      .filter((node): node is Konva.Shape => Boolean(node?.visible()));
+    const primary = primaryId ? findDesignNode(layer, primaryId) : nodes.at(-1) ?? null;
+    selectedNodeRef.current = primary;
+    selectedIdsRef.current = ids;
+    transformer.nodes(nodes);
+    const locked = nodes.some((node) => Boolean(node.getAttr("designLocked")));
     transformer.resizeEnabled(!locked);
     transformer.rotateEnabled(!locked);
-    setSelectedId(node ? designId : null);
+    setSelectedId(primary ? String(primary.getAttr("designId")) : null);
+    setSelectedIds(ids);
     layer.batchDraw();
+  }
+
+  function selectById(designId: string | null, additive = false) {
+    if (!designId) {
+      selectByIds([]);
+      return;
+    }
+    const related = selectionForObject(projectRef.current.objects, designId);
+    if (!additive) {
+      selectByIds(related, designId);
+      return;
+    }
+    const current = selectedIdsRef.current;
+    const remove = related.every((id) => current.includes(id));
+    const next = remove ? current.filter((id) => !related.includes(id)) : [...current, ...related];
+    selectByIds(next, remove ? next.at(-1) ?? null : designId);
   }
 
   function beginInlineTextEdit(node: Konva.Text) {
@@ -603,20 +1059,31 @@ function Editor({
     layerRef.current?.batchDraw();
   }
 
-  async function renderProject(next: GlassWareProject, selectAfter: string | null = null) {
+  async function renderProject(next: GlassWareProject, selectAfter: string | string[] | null = null) {
     const stage = stageRef.current;
     const layer = layerRef.current;
     if (!stage || !layer) return;
     const renderVersion = ++renderVersionRef.current;
     const dimensions = displayDimensions(next);
-    stage.size({ width: dimensions.width, height: dimensions.height });
-    layer.destroyChildren();
-    layer.scale({ x: dimensions.scale, y: dimensions.scale });
     const backdrop = await createArtworkBackdrop(next.canvas, next.canvas.presentation);
-    if (renderVersion !== renderVersionRef.current) return;
+    if (renderVersion !== renderVersionRef.current) {
+      backdrop.destroy();
+      return;
+    }
     const card = new Konva.Rect({ id: "artwork-card", listening: false });
     const artworkGroup = new Konva.Group({ id: "artwork-content" });
     const artworkFrame = new Konva.Group({ id: "artwork-frame-shell", listening: false });
+    const pendingLayer = new Konva.Layer();
+    pendingLayer.visible(false);
+    pendingLayer.scale({ x: dimensions.scale, y: dimensions.scale });
+    stage.add(pendingLayer);
+    pendingLayer.add(backdrop);
+    pendingLayer.add(card);
+    pendingLayer.add(artworkGroup);
+    pendingLayer.add(artworkFrame);
+    const discardPendingRender = () => {
+      pendingLayer.destroy();
+    };
     artworkGroup.add(new Konva.Rect({
       id: "background",
       width: next.canvas.width,
@@ -624,17 +1091,26 @@ function Editor({
       fill: next.canvas.background,
       listening: false,
     }));
-    artworkBackdropRef.current = backdrop;
-    artworkCardRef.current = card;
-    artworkGroupRef.current = artworkGroup;
-    artworkFrameRef.current = artworkFrame;
-    layer.add(backdrop);
-    layer.add(card);
-    layer.add(artworkGroup);
-    layer.add(artworkFrame);
+    for (const guide of next.canvas.guides) {
+      artworkGroup.add(new Konva.Line({
+        name: "canvas-guide",
+        points: guide.axis === "x"
+          ? [guide.position, 0, guide.position, next.canvas.height]
+          : [0, guide.position, next.canvas.width, guide.position],
+        stroke: "#1677ff",
+        strokeWidth: 1.5,
+        dash: [8, 6],
+        opacity: 0.8,
+        listening: false,
+      }));
+    }
     for (const object of next.objects) {
       const node = await designNodeToKonva(object, loadAsset, artworkGroup);
-      if (renderVersion !== renderVersionRef.current) return;
+      if (renderVersion !== renderVersionRef.current) {
+        node.destroy();
+        discardPendingRender();
+        return;
+      }
       if (node instanceof Konva.Image && object.kind === "image") {
         artworkGroup.add(createImageFrameShell(node, object.presentation));
       }
@@ -651,11 +1127,27 @@ function Editor({
       anchorSize: 12 / dimensions.scale,
       padding: 4 / dimensions.scale,
     });
+    if (renderVersion !== renderVersionRef.current) {
+      transformer.destroy();
+      discardPendingRender();
+      return;
+    }
+    pendingLayer.add(transformer);
+    stage.size({ width: dimensions.width, height: dimensions.height });
+    layer.destroyChildren();
+    layer.scale({ x: dimensions.scale, y: dimensions.scale });
+    artworkBackdropRef.current = backdrop;
+    artworkCardRef.current = card;
+    artworkGroupRef.current = artworkGroup;
+    artworkFrameRef.current = artworkFrame;
     transformerRef.current = transformer;
-    layer.add(transformer);
+    for (const child of [...pendingLayer.getChildren()]) child.moveTo(layer);
+    pendingLayer.destroy();
     applyArtworkPresentationToStage(next.canvas, next.canvas.presentation);
     layer.draw();
-    selectById(selectAfter && next.objects.some((object) => object.id === selectAfter) ? selectAfter : null);
+    const requested = Array.isArray(selectAfter) ? selectAfter : selectAfter ? [selectAfter] : [];
+    const selection = requested.filter((id) => next.objects.some((object) => object.id === id));
+    selectByIds(selection, selection.includes(selectedId ?? "") ? selectedId : selection.at(-1) ?? null);
   }
 
   function commitCanvas(summary: string) {
@@ -667,7 +1159,7 @@ function Editor({
     });
     setCurrentProject(next);
     if (next.objects.some((object) => object.kind === "shape" && object.shape === "blur")) {
-      void renderProject(next, selectedId);
+      void renderProject(next, selectedIdsRef.current);
     }
     void persist(next);
   }
@@ -682,20 +1174,26 @@ function Editor({
     if (!layer || !artworkGroup) return;
     clearSnapGuides();
     const canvas = projectRef.current.canvas;
-    const xGuides = [0, canvas.width / 2, canvas.width];
-    const yGuides = [0, canvas.height / 2, canvas.height];
-    for (const other of layer.find(`.${DESIGN_OBJECT_NAME}`)) {
-      if (other === node || !other.visible()) continue;
-      const rect = other.getClientRect({ relativeTo: artworkGroup, skipShadow: true, skipStroke: true });
-      xGuides.push(rect.x, rect.x + rect.width / 2, rect.x + rect.width);
-      yGuides.push(rect.y, rect.y + rect.height / 2, rect.y + rect.height);
+    if (!canvas.snapping.enabled) return;
+    const xGuides = canvas.snapping.canvas ? [0, canvas.width / 2, canvas.width] : [];
+    const yGuides = canvas.snapping.canvas ? [0, canvas.height / 2, canvas.height] : [];
+    if (canvas.snapping.guides) {
+      for (const guide of canvas.guides) (guide.axis === "x" ? xGuides : yGuides).push(guide.position);
+    }
+    if (canvas.snapping.objects) {
+      for (const other of layer.find(`.${DESIGN_OBJECT_NAME}`)) {
+        if (other === node || selectedIdsRef.current.includes(String(other.getAttr("designId"))) || !other.visible()) continue;
+        const rect = other.getClientRect({ relativeTo: artworkGroup, skipShadow: true, skipStroke: true });
+        xGuides.push(rect.x, rect.x + rect.width / 2, rect.x + rect.width);
+        yGuides.push(rect.y, rect.y + rect.height / 2, rect.y + rect.height);
+      }
     }
     const rect = node.getClientRect({ relativeTo: artworkGroup, skipShadow: true, skipStroke: true });
     const ownX = [rect.x, rect.x + rect.width / 2, rect.x + rect.width];
     const ownY = [rect.y, rect.y + rect.height / 2, rect.y + rect.height];
     const artworkScale = artworkLayout(canvas, liveArtworkPresentationRef.current).scale;
     const activeScale = displayDimensions(projectRef.current).scale * artworkScale;
-    const threshold = 8 / activeScale;
+    const threshold = canvas.snapping.threshold / activeScale;
     const xMatch = xGuides
       .flatMap((guide) => ownX.map((point) => ({ guide, delta: guide - point })))
       .filter((match) => Math.abs(match.delta) <= threshold)
@@ -733,7 +1231,62 @@ function Editor({
       const designNode = target.hasName(DESIGN_OBJECT_NAME)
         ? target
         : target.findAncestor(`.${DESIGN_OBJECT_NAME}`);
-      selectById(designNode ? String((designNode as Konva.Node).getAttr("designId")) : null);
+      const additive = Boolean((event.evt as PointerEvent).shiftKey || (event.evt as PointerEvent).metaKey || (event.evt as PointerEvent).ctrlKey);
+      if (designNode) {
+        selectById(String((designNode as Konva.Node).getAttr("designId")), additive);
+        return;
+      }
+      if (!additive) selectByIds([]);
+      const group = artworkGroupRef.current;
+      const pointer = stage.getPointerPosition();
+      if (!group || !pointer) return;
+      const point = group.getAbsoluteTransform().copy().invert().point(pointer);
+      marqueeStartRef.current = { ...point, additive };
+      const marquee = new Konva.Rect({
+        name: "selection-marquee",
+        x: point.x,
+        y: point.y,
+        width: 0,
+        height: 0,
+        fill: "rgba(22,119,255,.09)",
+        stroke: "#1677ff",
+        strokeWidth: 1.5,
+        dash: [7, 5],
+        listening: false,
+      });
+      marqueeRectRef.current = marquee;
+      group.add(marquee);
+      transformerRef.current?.moveToTop();
+      layer.batchDraw();
+    });
+    stage.on("pointermove", () => {
+      const start = marqueeStartRef.current;
+      const marquee = marqueeRectRef.current;
+      const group = artworkGroupRef.current;
+      const pointer = stage.getPointerPosition();
+      if (!start || !marquee || !group || !pointer) return;
+      const point = group.getAbsoluteTransform().copy().invert().point(pointer);
+      marquee.setAttrs({
+        x: Math.min(start.x, point.x),
+        y: Math.min(start.y, point.y),
+        width: Math.abs(point.x - start.x),
+        height: Math.abs(point.y - start.y),
+      });
+      layer.batchDraw();
+    });
+    stage.on("pointerup", () => {
+      const start = marqueeStartRef.current;
+      const marquee = marqueeRectRef.current;
+      if (!start || !marquee) return;
+      const rectangle = marquee.getClientRect();
+      const matches = layer.find(`.${DESIGN_OBJECT_NAME}`)
+        .filter((node) => node.visible() && Konva.Util.haveIntersection(rectangle, node.getClientRect()))
+        .map((node) => String(node.getAttr("designId")));
+      marquee.destroy();
+      marqueeRectRef.current = null;
+      marqueeStartRef.current = null;
+      const next = start.additive ? [...selectedIdsRef.current, ...matches] : matches;
+      selectByIds(next);
     });
     stage.on("dblclick dbltap", (event) => {
       const target = event.target;
@@ -744,12 +1297,40 @@ function Editor({
       selectById(String(designNode.getAttr("designId")));
       beginInlineTextEdit(designNode);
     });
+    stage.on("dragstart", (event) => {
+      const target = event.target as Konva.Node;
+      if (!target.hasName(DESIGN_OBJECT_NAME) || selectedIdsRef.current.length < 2) return;
+      const anchorId = String(target.getAttr("designId"));
+      if (!selectedIdsRef.current.includes(anchorId)) return;
+      multiDragRef.current = {
+        anchorId,
+        anchorX: target.x(),
+        anchorY: target.y(),
+        positions: new Map(selectedIdsRef.current.flatMap((id) => {
+          const node = findDesignNode(layer, id);
+          return node ? [[id, { x: node.x(), y: node.y() }] as const] : [];
+        })),
+      };
+    });
     stage.on("dragmove", (event) => {
-      if (event.target.hasName(DESIGN_OBJECT_NAME)) snapDraggedNode(event.target);
+      const target = event.target as Konva.Node;
+      if (!target.hasName(DESIGN_OBJECT_NAME)) return;
+      snapDraggedNode(target);
+      const drag = multiDragRef.current;
+      if (!drag || drag.anchorId !== String(target.getAttr("designId"))) return;
+      const deltaX = target.x() - drag.anchorX;
+      const deltaY = target.y() - drag.anchorY;
+      for (const [id, position] of drag.positions) {
+        if (id === drag.anchorId) continue;
+        findDesignNode(layer, id)?.position({ x: position.x + deltaX, y: position.y + deltaY });
+      }
+      transformerRef.current?.forceUpdate();
+      layer.batchDraw();
     });
     stage.on("dragend", (event) => {
       clearSnapGuides();
-      if (event.target.hasName(DESIGN_OBJECT_NAME)) commitCanvas("Object moved");
+      multiDragRef.current = null;
+      if (event.target.hasName(DESIGN_OBJECT_NAME)) commitCanvas(selectedIdsRef.current.length > 1 ? "Selection moved" : "Object moved");
     });
     stage.on("transformend", (event) => {
       if (event.target.hasName(DESIGN_OBJECT_NAME)) commitCanvas("Object transformed");
@@ -762,10 +1343,11 @@ function Editor({
       const blob = await dataUrlToBlob(capture);
       await addImageBlob(new File([blob], "Browser capture.png", { type: blob.type || "image/png" }));
     });
-    void listProjects().then((projects) => !cancelled && setRecentProjects(projects));
+    void refreshProjectGallery().then(() => undefined);
 
     return () => {
       cancelled = true;
+      if (cloudSyncTimerRef.current !== null) window.clearTimeout(cloudSyncTimerRef.current);
       renderVersionRef.current += 1;
       inlineEditorCleanupRef.current?.();
       stage.destroy();
@@ -809,19 +1391,25 @@ function Editor({
       } else if (command && event.key.toLowerCase() === "s") {
         event.preventDefault();
         void persist();
-      } else if ((event.key === "Delete" || event.key === "Backspace") && selectedNodeRef.current) {
+      } else if ((event.key === "Delete" || event.key === "Backspace") && selectedIdsRef.current.length) {
         event.preventDefault();
         deleteSelected();
-      } else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key) && selectedNodeRef.current) {
+      } else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key) && selectedIdsRef.current.length) {
         event.preventDefault();
         const amount = event.shiftKey ? 10 : 1;
-        const node = selectedNodeRef.current;
-        if (event.key === "ArrowLeft") node.x(node.x() - amount);
-        if (event.key === "ArrowRight") node.x(node.x() + amount);
-        if (event.key === "ArrowUp") node.y(node.y() - amount);
-        if (event.key === "ArrowDown") node.y(node.y() + amount);
+        for (const id of selectedIdsRef.current) {
+          const node = layerRef.current && findDesignNode(layerRef.current, id);
+          if (!node || node.getAttr("designLocked")) continue;
+          if (event.key === "ArrowLeft") node.x(node.x() - amount);
+          if (event.key === "ArrowRight") node.x(node.x() + amount);
+          if (event.key === "ArrowUp") node.y(node.y() - amount);
+          if (event.key === "ArrowDown") node.y(node.y() + amount);
+        }
         layerRef.current?.batchDraw();
-        commitCanvas("Object nudged");
+        transformerRef.current?.forceUpdate();
+        commitCanvas(selectedIdsRef.current.length > 1 ? "Selection nudged" : "Object nudged");
+      } else if (event.key === "Escape" && selectedIdsRef.current.length) {
+        selectByIds([]);
       }
     }
     function onPaste(event: ClipboardEvent) {
@@ -858,6 +1446,7 @@ function Editor({
         crop: { ...FULL_IMAGE_CROP },
         adjustments: { ...DEFAULT_IMAGE_ADJUSTMENTS },
         presentation: cloneImagePresentation(),
+        mask: { ...DEFAULT_IMAGE_MASK, strokes: [] },
         x: (projectRef.current.canvas.width - width) / 2,
         y: (projectRef.current.canvas.height - height) / 2,
         width,
@@ -985,29 +1574,42 @@ function Editor({
     setActiveTool("Text");
   }
 
-  async function addShape(shape: ShapeKind) {
-    const annotation = activeTool === "Annotate"
+  async function addShape(shape: ShapeKind, source: "shape" | "annotation" = "shape") {
+    const annotation = source === "annotation"
       ? ANNOTATION_OPTIONS.find((option) => option.kind === shape)
       : undefined;
     const isLinear = shape === "line" || shape === "arrow" || shape === "curved-arrow";
     const isRedaction = shape === "blur" || shape === "redact";
     const isWide = isLinear || isRedaction || shape === "speech-bubble";
-    const width = projectRef.current.canvas.width * (isWide ? 0.42 : 0.28);
-    const height = projectRef.current.canvas.height * (isLinear ? 0.16 : isRedaction ? 0.12 : shape === "speech-bubble" ? 0.2 : 0.28);
+    let width = projectRef.current.canvas.width * (isWide ? 0.42 : 0.28);
+    let height = projectRef.current.canvas.height * (isLinear ? 0.16 : isRedaction ? 0.12 : shape === "speech-bubble" ? 0.2 : 0.28);
+    let x = (projectRef.current.canvas.width - width) / 2;
+    let y = (projectRef.current.canvas.height - height) / 2;
+    const selectedTarget = isRedaction
+      ? projectRef.current.objects.find((object) => object.id === selectedId && object.visible && !(object.kind === "shape" && (object.shape === "blur" || object.shape === "redact")))
+      : undefined;
+    if (selectedTarget) {
+      const targetWidth = Math.abs(selectedTarget.width * selectedTarget.scaleX);
+      const targetHeight = Math.abs(selectedTarget.height * selectedTarget.scaleY);
+      width = Math.max(80, Math.min(width, targetWidth * 0.72));
+      height = Math.max(52, Math.min(projectRef.current.canvas.height * 0.18, targetHeight * 0.46));
+      x = selectedTarget.x + (targetWidth - width) / 2;
+      y = selectedTarget.y + (targetHeight - height) / 2;
+    }
     const label = annotation?.label ?? SHAPE_OPTIONS.find((option) => option.kind === shape)?.label ?? "Shape";
     const design: DesignNode = {
       id: newId(),
       kind: "shape",
       name: label,
       shape,
-      x: (projectRef.current.canvas.width - width) / 2,
-      y: (projectRef.current.canvas.height - height) / 2,
+      x,
+      y,
       width,
       height,
       rotation: 0,
       scaleX: 1,
       scaleY: 1,
-      opacity: 1,
+      opacity: annotation && (shape === "rect" || shape === "ellipse") ? 0.2 : 1,
       visible: true,
       locked: false,
       fill: shape === "redact" ? "#111111" : annotation ? "#ff5d42" : "#d9d9d9",
@@ -1017,7 +1619,7 @@ function Editor({
     transformerRef.current?.moveToTop();
     selectById(design.id);
     commitCanvas(annotation ? `${label} annotation added` : "Shape added");
-    setActiveTool(annotation ? "Annotate" : "Shapes");
+    setActiveTool("Shapes");
   }
 
   function updateSelectedLive(attributes: Record<string, unknown>) {
@@ -1038,6 +1640,21 @@ function Editor({
     previewFill(color);
     if (!current || current.kind === "image" || current.fill.toLowerCase() === color.toLowerCase()) return;
     commitCanvas("Color changed");
+  }
+
+  function setBlendMode(mode: (typeof BLEND_MODES)[number]) {
+    const selected = new Set(selectedIdsRef.current);
+    const objects = projectRef.current.objects.map((object) => selected.has(object.id) && !object.locked
+      ? { ...object, blendMode: mode }
+      : object);
+    if (!objects.some((object, index) => object !== projectRef.current.objects[index])) return;
+    const next = commitSnapshot(projectRef.current, "Layer blend mode changed", {
+      canvas: projectRef.current.canvas,
+      objects,
+    });
+    setCurrentProject(next);
+    void renderProject(next, selectedIdsRef.current);
+    void persist(next);
   }
 
   function previewBackground(color: string) {
@@ -1149,14 +1766,16 @@ function Editor({
   function changeShapeType(shape: ShapeKind) {
     if (!selectedId) return;
     const nextObjects = projectRef.current.objects.map((object) =>
-      object.id === selectedId && object.kind === "shape" ? { ...object, shape } : object,
+      object.id === selectedId && object.kind === "shape"
+        ? { ...object, shape, fill: shape === "redact" ? "#111111" : object.fill }
+        : object,
     );
     const next = commitSnapshot(projectRef.current, "Shape changed", {
       canvas: projectRef.current.canvas,
       objects: nextObjects,
     });
     setCurrentProject(next);
-    void renderProject(next, selectedId);
+    void renderProject(next, selectedIdsRef.current);
     void persist(next);
   }
 
@@ -1216,7 +1835,7 @@ function Editor({
       objects: serializeLayer(layer),
     });
     setCurrentProject(next);
-    void renderProject(next, selectedId);
+    void renderProject(next, selectedIdsRef.current);
     void persist(next);
   }
 
@@ -1291,6 +1910,126 @@ function Editor({
     commitCanvas(`Crop set to ${label}`);
   }
 
+  function applyPreciseCrop(crop: NormalizedCrop) {
+    const current = liveImageState();
+    if (!current) return;
+    applyImageEdits(current.node, crop, current.adjustments);
+    transformerRef.current?.forceUpdate();
+    layerRef.current?.batchDraw();
+    commitCanvas("Image crop adjusted");
+    setCropEditorOpen(false);
+  }
+
+  function transformSelectedImage(mutator: (node: Konva.Image) => void, summary: string) {
+    const current = liveImageState();
+    const group = artworkGroupRef.current;
+    if (!current || !group || current.node.getAttr("designLocked")) return;
+    const before = current.node.getClientRect({ relativeTo: group, skipShadow: true });
+    mutator(current.node);
+    const after = current.node.getClientRect({ relativeTo: group, skipShadow: true });
+    current.node.position({
+      x: current.node.x() + before.x + before.width / 2 - after.x - after.width / 2,
+      y: current.node.y() + before.y + before.height / 2 - after.y - after.height / 2,
+    });
+    transformerRef.current?.forceUpdate();
+    layerRef.current?.batchDraw();
+    commitCanvas(summary);
+  }
+
+  function rotateSelectedImage(direction: -1 | 1) {
+    transformSelectedImage((node) => node.rotation((node.rotation() + direction * 90 + 360) % 360), direction > 0 ? "Image rotated clockwise" : "Image rotated counterclockwise");
+  }
+
+  function flipSelectedImage(axis: "horizontal" | "vertical") {
+    transformSelectedImage((node) => {
+      if (axis === "horizontal") node.scaleX(node.scaleX() * -1);
+      else node.scaleY(node.scaleY() * -1);
+    }, `Image flipped ${axis}`);
+  }
+
+  function applyImageMask(mask: ImageMask) {
+    if (!selectedId) return;
+    const objects = projectRef.current.objects.map((object) => object.id === selectedId && object.kind === "image"
+      ? { ...object, mask: cloneImageMask(mask) }
+      : object);
+    const next = commitSnapshot(projectRef.current, "Image mask adjusted", {
+      canvas: projectRef.current.canvas,
+      objects,
+    });
+    setCurrentProject(next);
+    setMaskEditorOpen(false);
+    void renderProject(next, selectedId);
+    void persist(next);
+  }
+
+  async function runRegionEdit({ mask, prompt, output, signal, onStatus }: RegionEditRequest) {
+    const current = projectRef.current;
+    const targetId = selectedIdsRef.current.length === 1 ? selectedIdsRef.current[0] : null;
+    const image = current.objects.find((object): object is ImageDesignNode => object.id === targetId && object.kind === "image");
+    if (!image) throw new Error("Select an image layer before editing a region.");
+    const asset = await loadAsset(image.assetId);
+    if (!asset) throw new Error("The selected image asset is unavailable.");
+    const connection = accountConnectionsRef.current.snapshot.connections.find((item) => item.status === "connected");
+    if (!accountConnectionsRef.current.snapshot.account || !connection) throw new Error("Sign in and connect an AI provider before editing image regions.");
+    onStatus("Rendering the selected crop and preservation mask…");
+    const prepared = await renderRegionEditSource(asset, image);
+    const maskDataUrl = renderRegionEditMask(mask, prepared.maskWidth, prepared.maskHeight);
+    if (signal.aborted) throw new DOMException("Region edit cancelled.", "AbortError");
+    onStatus("AI is editing only the selected pixels…");
+    const job = await accountConnectionsRef.current.requestImageEdit(
+      connection.id,
+      prepared.sourceDataUrl,
+      maskDataUrl,
+      prompt,
+      DEFAULT_AI_MODEL,
+      DEFAULT_AI_REASONING_EFFORT,
+      undefined,
+      signal,
+      (next) => onStatus(next.status === "queued" ? "Region edit queued…" : next.status === "running" ? "AI is reconstructing the selected region…" : "Applying the edited raster…"),
+    );
+    if (!job.imageEdit) throw new Error("The AI provider returned no edited raster.");
+    onStatus("Adding the edited raster to the artboard…");
+    const blob = await dataUrlToBlob(job.imageEdit.imageDataUrl);
+    const file = new File([blob], `${asset.name.replace(/\.[^.]+$/, "")} region edit.png`, { type: blob.type || "image/png" });
+    const editedAsset = await createStoredAsset(current.id, file, {
+      provider: "glassware-ai-edit",
+      connectionKind: job.imageEdit.provider,
+      model: job.imageEdit.model,
+      parentAssetId: asset.id,
+      createdAt: new Date().toISOString(),
+    });
+    await saveAsset(editedAsset);
+    const resetRasterEdits = {
+      crop: { ...FULL_IMAGE_CROP },
+      adjustments: { ...DEFAULT_IMAGE_ADJUSTMENTS },
+      mask: cloneImageMask(DEFAULT_IMAGE_MASK),
+    };
+    let selectedId = image.id;
+    const objects = current.objects.map((object) => object.id === image.id && output === "replace"
+      ? { ...object, assetId: editedAsset.id, ...resetRasterEdits }
+      : object);
+    if (output === "new-layer") {
+      selectedId = newId();
+      const editedLayer: ImageDesignNode = {
+        ...image,
+        ...resetRasterEdits,
+        id: selectedId,
+        name: `${image.name} · AI region edit`,
+        assetId: editedAsset.id,
+        locked: false,
+      };
+      objects.push(editedLayer);
+    }
+    const next = commitSnapshot(current, output === "replace" ? "AI region replaced image" : "AI region added as layer", {
+      canvas: current.canvas,
+      objects,
+    });
+    setCurrentProject(next);
+    await renderProject(next, [selectedId]);
+    void persist(next);
+    setMessage(output === "replace" ? "Selected image replaced with the region edit." : "Region edit added as a new editable layer.");
+  }
+
   function resetPhotoEdits() {
     const current = liveImageState();
     if (!current) return;
@@ -1334,11 +2073,52 @@ function Editor({
     });
   }
 
+  function beginCanvasPan(event: ReactPointerEvent<HTMLElement>) {
+    if (event.button !== 0 && event.button !== 1) return;
+    const target = event.target as HTMLElement;
+    const overArtboard = Boolean(target.closest(".design-canvas"));
+    const interactive = Boolean(target.closest("button, input, textarea, select, a, .toast"));
+    const shouldPan = event.button === 1 || spacePanRef.current || (panMode && !interactive) || (!overArtboard && !interactive);
+    if (!shouldPan) return;
+    canvasPanRef.current = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      scrollLeft: event.currentTarget.scrollLeft,
+      scrollTop: event.currentTarget.scrollTop,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setIsPanningCanvas(true);
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function moveCanvasPan(event: ReactPointerEvent<HTMLElement>) {
+    const pan = canvasPanRef.current;
+    if (!pan || pan.pointerId !== event.pointerId) return;
+    event.currentTarget.scrollLeft = pan.scrollLeft - (event.clientX - pan.clientX);
+    event.currentTarget.scrollTop = pan.scrollTop - (event.clientY - pan.clientY);
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function endCanvasPan(event: ReactPointerEvent<HTMLElement>) {
+    if (canvasPanRef.current?.pointerId !== event.pointerId) return;
+    canvasPanRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    setIsPanningCanvas(false);
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
   function toggleVisibility(designId: string) {
     const node = layerRef.current && findDesignNode(layerRef.current, designId);
     if (!node) return;
     node.visible(!node.visible());
-    if (!node.visible() && selectedId === designId) selectById(null);
+    if (!node.visible() && selectedIdsRef.current.includes(designId)) {
+      const nextSelection = selectedIdsRef.current.filter((id) => id !== designId);
+      selectByIds(nextSelection);
+    }
     commitCanvas(node.visible() ? "Layer shown" : "Layer hidden");
   }
 
@@ -1347,8 +2127,134 @@ function Editor({
     if (!node) return;
     const locked = !Boolean(node.getAttr("designLocked"));
     applyLockedState(node, locked);
-    if (selectedId === designId) selectById(designId);
+    if (selectedIdsRef.current.includes(designId)) selectByIds(selectedIdsRef.current, selectedId);
     commitCanvas(locked ? "Layer locked" : "Layer unlocked");
+  }
+
+  function setAllLayerVisibility(visible: boolean) {
+    const current = projectRef.current;
+    if (!current.objects.length || current.objects.every((object) => object.visible === visible)) return;
+    const next = commitSnapshot(current, visible ? "All layers shown" : "All layers hidden", {
+      canvas: current.canvas,
+      objects: current.objects.map((object) => ({ ...object, visible })),
+    });
+    setCurrentProject(next);
+    if (!visible) {
+      selectedIdsRef.current = [];
+      setSelectedIds([]);
+      setSelectedId(null);
+    }
+    void renderProject(next, visible ? selectedIdsRef.current : null);
+    void persist(next);
+  }
+
+  function setAllLayerLock(locked: boolean) {
+    const current = projectRef.current;
+    if (!current.objects.length || current.objects.every((object) => object.locked === locked)) return;
+    const next = commitSnapshot(current, locked ? "All layers locked" : "All layers unlocked", {
+      canvas: current.canvas,
+      objects: current.objects.map((object) => ({ ...object, locked })),
+    });
+    setCurrentProject(next);
+    void renderProject(next, selectedIdsRef.current);
+    void persist(next);
+  }
+
+  function commitLayoutObjects(objects: DesignNode[], summary: string, selection = selectedIdsRef.current) {
+    const current = projectRef.current;
+    const next = commitSnapshot(current, summary, { canvas: current.canvas, objects });
+    setCurrentProject(next);
+    void renderProject(next, selection);
+    void persist(next);
+  }
+
+  function alignSelection(alignment: Alignment) {
+    if (!selectedIdsRef.current.length) return;
+    const objects = alignObjects(
+      projectRef.current.objects,
+      selectedIdsRef.current,
+      projectRef.current.canvas,
+      alignment,
+      alignmentReference,
+    );
+    commitLayoutObjects(objects, `Selection aligned ${alignment}`);
+  }
+
+  function distributeSelection(axis: DistributionAxis) {
+    if (selectedIdsRef.current.length < 3) return;
+    commitLayoutObjects(
+      distributeObjects(projectRef.current.objects, selectedIdsRef.current, axis),
+      `${axis === "horizontal" ? "Horizontal" : "Vertical"} spacing distributed`,
+    );
+  }
+
+  function groupSelection() {
+    if (selectedIdsRef.current.length < 2) return;
+    commitLayoutObjects(
+      groupObjects(projectRef.current.objects, selectedIdsRef.current, newId()),
+      "Layers grouped",
+    );
+  }
+
+  function ungroupSelection() {
+    if (!selectedObjects.some((object) => object.groupId)) return;
+    commitLayoutObjects(
+      ungroupObjects(projectRef.current.objects, selectedIdsRef.current),
+      "Layers ungrouped",
+    );
+  }
+
+  function updateCanvasWorkspace(patch: Partial<Pick<CanvasSettings, "showRulers" | "snapping">>, summary: string) {
+    const current = projectRef.current;
+    const canvas = {
+      ...current.canvas,
+      ...patch,
+      snapping: patch.snapping ? { ...current.canvas.snapping, ...patch.snapping } : current.canvas.snapping,
+    };
+    const next = commitSnapshot(current, summary, { canvas, objects: current.objects });
+    setCurrentProject(next);
+    void renderProject(next, selectedIdsRef.current);
+    void persist(next);
+  }
+
+  function addCanvasGuide(axis: "x" | "y", position?: number) {
+    const current = projectRef.current;
+    const maximum = axis === "x" ? current.canvas.width : current.canvas.height;
+    const nextPosition = Math.max(0, Math.min(maximum, position ?? maximum / 2));
+    const canvas = {
+      ...current.canvas,
+      guides: [...current.canvas.guides, { id: newId(), axis, position: nextPosition }],
+      showRulers: true,
+    };
+    const next = commitSnapshot(current, `${axis === "x" ? "Vertical" : "Horizontal"} guide added`, { canvas, objects: current.objects });
+    setCurrentProject(next);
+    void renderProject(next, selectedIdsRef.current);
+    void persist(next);
+  }
+
+  function updateCanvasGuide(guideId: string, position: number) {
+    const current = projectRef.current;
+    const canvas = {
+      ...current.canvas,
+      guides: current.canvas.guides.map((guide) => {
+        if (guide.id !== guideId) return guide;
+        const maximum = guide.axis === "x" ? current.canvas.width : current.canvas.height;
+        return { ...guide, position: Math.max(0, Math.min(maximum, position)) };
+      }),
+    };
+    const next = commitSnapshot(current, "Guide moved", { canvas, objects: current.objects });
+    setCurrentProject(next);
+    void renderProject(next, selectedIdsRef.current);
+    void persist(next);
+  }
+
+  function removeCanvasGuide(guideId: string) {
+    const current = projectRef.current;
+    const canvas = { ...current.canvas, guides: current.canvas.guides.filter((guide) => guide.id !== guideId) };
+    const next = commitSnapshot(current, "Guide removed", { canvas, objects: current.objects });
+    setCurrentProject(next);
+    void renderProject(next, selectedIdsRef.current);
+    void persist(next);
   }
 
   function reorder(designId: string, direction: "up" | "down" | "front" | "back") {
@@ -1431,31 +2337,47 @@ function Editor({
   }
 
   function duplicateSelected() {
-    const currentSelectedId = selectedNodeRef.current?.getAttr("designId") as string | undefined;
-    if (!currentSelectedId) return;
-    const source = projectRef.current.objects.find((object) => object.id === currentSelectedId);
-    if (!source) return;
-    const copy = { ...source, id: newId(), name: `${source.name} copy`, x: source.x + 28, y: source.y + 28 } as DesignNode;
-    const next = commitSnapshot(projectRef.current, "Layer duplicated", {
+    const sourceIds = selectedIdsRef.current;
+    if (!sourceIds.length) return;
+    const groupIds = new Map<string, string>();
+    const copies = projectRef.current.objects.filter((object) => sourceIds.includes(object.id)).map((source) => {
+      const groupId = source.groupId
+        ? groupIds.get(source.groupId) ?? (() => { const id = newId(); groupIds.set(source.groupId!, id); return id; })()
+        : undefined;
+      return {
+        ...source,
+        id: newId(),
+        name: `${source.name} copy`,
+        x: source.x + 28,
+        y: source.y + 28,
+        ...(groupId ? { groupId } : {}),
+      } as DesignNode;
+    });
+    if (!copies.length) return;
+    const next = commitSnapshot(projectRef.current, copies.length > 1 ? "Layers duplicated" : "Layer duplicated", {
       canvas: projectRef.current.canvas,
-      objects: [...projectRef.current.objects, copy],
+      objects: [...projectRef.current.objects, ...copies],
     });
     setCurrentProject(next);
     selectedNodeRef.current = null;
     transformerRef.current?.nodes([]);
-    setSelectedId(copy.id);
-    void renderProject(next, copy.id);
+    selectedIdsRef.current = copies.map((copy) => copy.id);
+    setSelectedIds(selectedIdsRef.current);
+    setSelectedId(copies.at(-1)!.id);
+    void renderProject(next, selectedIdsRef.current);
     void persist(next);
   }
 
   function deleteSelected() {
-    const currentSelectedId = selectedNodeRef.current?.getAttr("designId") as string | undefined;
-    if (!currentSelectedId) return;
-    const next = commitSnapshot(projectRef.current, "Layer deleted", {
+    const ids = new Set(projectRef.current.objects.filter((object) => selectedIdsRef.current.includes(object.id) && !object.locked).map((object) => object.id));
+    if (!ids.size) return;
+    const next = commitSnapshot(projectRef.current, ids.size > 1 ? "Layers deleted" : "Layer deleted", {
       canvas: projectRef.current.canvas,
-      objects: projectRef.current.objects.filter((object) => object.id !== currentSelectedId),
+      objects: projectRef.current.objects.filter((object) => !ids.has(object.id)),
     });
     setCurrentProject(next);
+    selectedIdsRef.current = [];
+    setSelectedIds([]);
     setSelectedId(null);
     void renderProject(next);
     void persist(next);
@@ -1465,41 +2387,579 @@ function Editor({
     if (!canUndo(projectRef.current)) return;
     const next = undoProject(projectRef.current);
     setCurrentProject(next);
-    void renderProject(next, selectedId);
+    void renderProject(next, selectedIdsRef.current);
     void persist(next);
   }
 
   function redo() {
-    if (!canRedo(projectRef.current)) return;
+    const aiTarget = findLatestRedoableAiRevision(projectRef.current);
+    if (aiTarget?.index === currentRevisionIndex(projectRef.current) + 1) {
+      redoAiEdits();
+      return;
+    }
+    if (!canRedo(projectRef.current)) {
+      redoAiEdits();
+      return;
+    }
     const next = redoProject(projectRef.current);
     setCurrentProject(next);
-    void renderProject(next, selectedId);
+    void renderProject(next, selectedIdsRef.current);
     void persist(next);
+  }
+
+  function captureAiArtboard(pass: number): AiAttachment {
+    const stage = stageRef.current;
+    const transformer = transformerRef.current;
+    if (!stage) throw new Error("The artboard is not ready for visual inspection.");
+    const transformerWasVisible = transformer?.visible() ?? false;
+    transformer?.hide();
+    layerRef.current?.batchDraw();
+    const dataUrl = stage.toDataURL({ mimeType: "image/jpeg", quality: 0.88, pixelRatio: 1 });
+    if (transformerWasVisible) transformer?.show();
+    layerRef.current?.batchDraw();
+    return {
+      id: crypto.randomUUID(),
+      name: `glassware-artboard-pass-${pass}.jpg`,
+      mimeType: "image/jpeg",
+      dataUrl,
+    };
+  }
+
+  async function applyAiDecisionToDraft(
+    draft: GlassWareProject,
+    plan: AiEditPlan,
+    attachments: AiAttachment[],
+    regionContext?: Pick<AiAgentRequest, "connectionId" | "model" | "reasoningEffort"> & { agentSessionId?: string; signal: AbortSignal },
+  ) {
+    const { applyAiEditPlan } = await import("./lib/ai-plan");
+    const mediaActions = new Set(["generate_image", "add_attachment_image", "search_open_image", "edit_image_region"]);
+    const mediaOperations = plan.operations.filter((operation) => mediaActions.has(operation.action));
+    const editablePlan = { ...plan, operations: plan.operations.filter((operation) => !mediaActions.has(operation.action)) };
+    const application = applyAiEditPlan(draft, editablePlan, { components, brandKits, exportAssets });
+    let objects = [...application.snapshot.objects];
+    let generatedImageCount = 0;
+    let importedImageCount = 0;
+    let sourcedImageCount = 0;
+    for (const operation of mediaOperations) {
+      const targetIndex = operation.targetId
+        ? objects.findIndex((object) => object.id === operation.targetId && object.kind === "image")
+        : -1;
+      const target = targetIndex >= 0 ? objects[targetIndex] as ImageDesignNode : null;
+      if (target?.locked) {
+        application.skippedOperations.push(operation.label);
+        continue;
+      }
+      if (operation.action === "edit_image_region") {
+        const points = operation.maskPoints?.filter((point) => Number.isFinite(point)).slice(0, 2048) ?? [];
+        const imagePrompt = operation.imagePrompt?.trim();
+        const sourceAsset = target ? await loadAsset(target.assetId) : null;
+        if (!regionContext || !target || !sourceAsset || !imagePrompt || points.length < 4 || points.length % 2 !== 0) {
+          application.skippedOperations.push(operation.label);
+          continue;
+        }
+        const selectionMask: ImageMask = {
+          enabled: true,
+          inverted: false,
+          feather: Math.max(0, Math.min(operation.maskFeather ?? 0, 40)),
+          strokes: [{
+            id: newId(),
+            mode: "hide",
+            size: Math.max(0.01, Math.min((operation.maskSize ?? 0.08) > 1 ? (operation.maskSize ?? 80) / 1000 : operation.maskSize ?? 0.08, 0.4)),
+            points: points.map((point) => Math.max(0, Math.min(point, 1))),
+          }],
+        };
+        const prepared = await renderRegionEditSource(sourceAsset, target);
+        const maskDataUrl = renderRegionEditMask(selectionMask, prepared.maskWidth, prepared.maskHeight);
+        const regionJob = await accountConnectionsRef.current.requestImageEdit(
+          regionContext.connectionId,
+          prepared.sourceDataUrl,
+          maskDataUrl,
+          imagePrompt,
+          regionContext.model,
+          regionContext.reasoningEffort,
+          regionContext.agentSessionId,
+          regionContext.signal,
+        );
+        if (!regionJob.imageEdit) {
+          application.skippedOperations.push(operation.label);
+          continue;
+        }
+        const editedBlob = await dataUrlToBlob(regionJob.imageEdit.imageDataUrl);
+        const editedFile = new File([editedBlob], `${sourceAsset.name.replace(/\.[^.]+$/, "")} region edit.png`, { type: editedBlob.type || "image/png" });
+        const editedAsset = await createStoredAsset(draft.id, editedFile, {
+          provider: "glassware-ai-edit",
+          connectionKind: regionJob.imageEdit.provider,
+          model: regionJob.imageEdit.model,
+          parentAssetId: sourceAsset.id,
+          createdAt: new Date().toISOString(),
+        });
+        await saveAsset(editedAsset);
+        const editedLayer: ImageDesignNode = {
+          ...target,
+          id: operation.regionOutput === "new-layer" ? newId() : target.id,
+          name: operation.name?.trim().slice(0, 120) || (operation.regionOutput === "new-layer" ? `${target.name} · AI region edit` : target.name),
+          assetId: editedAsset.id,
+          crop: { ...FULL_IMAGE_CROP },
+          adjustments: { ...DEFAULT_IMAGE_ADJUSTMENTS },
+          mask: cloneImageMask(DEFAULT_IMAGE_MASK),
+          locked: false,
+        };
+        if (operation.regionOutput === "new-layer") {
+          objects.splice(targetIndex + 1, 0, editedLayer);
+          application.addedObjectIds.push(editedLayer.id);
+        } else {
+          objects[targetIndex] = editedLayer;
+        }
+        application.appliedOperations.push(operation.label);
+        generatedImageCount += 1;
+        continue;
+      }
+      const attachment = operation.action === "add_attachment_image"
+        ? attachments.find((candidate) => candidate.mimeType.startsWith("image/") && (
+          candidate.name.toLocaleLowerCase() === operation.attachmentName?.toLocaleLowerCase() ||
+          normalizedAiAttachmentName(candidate.name) === normalizedAiAttachmentName(operation.attachmentName ?? "")
+        ))
+        : null;
+      let file: File | null = null;
+      let source: AssetSource | undefined;
+      if (operation.action === "search_open_image") {
+        const query = operation.imageSearchQuery?.trim();
+        const openImage = query ? (await searchOpenverseImages(query))[0] : null;
+        if (openImage) {
+          file = await downloadOpenverseImage(openImage);
+          source = openverseAssetSource(openImage);
+        }
+      } else {
+        const dataUrl = operation.action === "generate_image" ? operation.imageDataUrl : attachment?.dataUrl;
+        if (dataUrl) {
+          const blob = await dataUrlToBlob(dataUrl);
+          file = new File([blob], operation.action === "generate_image" ? "AI generated image.png" : attachment?.name ?? "AI attachment.png", { type: blob.type || attachment?.mimeType || "image/png" });
+        }
+      }
+      if (!file) {
+        application.skippedOperations.push(operation.label);
+        continue;
+      }
+      const asset = await createStoredAsset(draft.id, file, source);
+      await saveAsset(asset);
+      if (target) {
+        const width = Math.max(8, Math.min(operation.width ?? target.width, application.snapshot.canvas.width));
+        const height = Math.max(8, Math.min(operation.height ?? target.height, application.snapshot.canvas.height));
+        objects = objects.map((object, index) => index === targetIndex ? {
+          ...target,
+          assetId: asset.id,
+          name: operation.name?.trim().slice(0, 120) || target.name,
+          x: Math.max(0, Math.min(operation.x ?? target.x, application.snapshot.canvas.width - width)),
+          y: Math.max(0, Math.min(operation.y ?? target.y, application.snapshot.canvas.height - height)),
+          width,
+          height,
+        } : object);
+        application.appliedOperations.push(operation.label);
+        if (operation.action === "generate_image") generatedImageCount += 1;
+        else if (operation.action === "search_open_image") sourcedImageCount += 1;
+        else importedImageCount += 1;
+        continue;
+      }
+      const maxWidth = application.snapshot.canvas.width * 0.72;
+      const maxHeight = application.snapshot.canvas.height * 0.72;
+      const scale = Math.min(1, maxWidth / asset.width, maxHeight / asset.height);
+      const width = Math.max(8, Math.min(operation.width ?? asset.width * scale, application.snapshot.canvas.width));
+      const height = Math.max(8, Math.min(operation.height ?? asset.height * scale, application.snapshot.canvas.height));
+      const image: ImageDesignNode = {
+        id: newId(),
+        kind: "image",
+        name: operation.name?.trim().slice(0, 120) || asset.name || operation.label.slice(0, 120),
+        assetId: asset.id,
+        crop: { ...FULL_IMAGE_CROP },
+        adjustments: { ...DEFAULT_IMAGE_ADJUSTMENTS },
+        presentation: cloneImagePresentation(),
+        mask: { ...DEFAULT_IMAGE_MASK, strokes: [] },
+        x: Math.max(0, Math.min(operation.x ?? (application.snapshot.canvas.width - width) / 2, application.snapshot.canvas.width - width)),
+        y: Math.max(0, Math.min(operation.y ?? (application.snapshot.canvas.height - height) / 2, application.snapshot.canvas.height - height)),
+        width,
+        height,
+        rotation: Math.max(-360, Math.min(operation.rotation ?? 0, 360)),
+        scaleX: 1,
+        scaleY: 1,
+        opacity: Math.max(0, Math.min(operation.opacity ?? 1, 1)),
+        visible: operation.visible ?? true,
+        locked: operation.locked ?? false,
+      };
+      objects.push(image);
+      application.addedObjectIds.push(image.id);
+      application.appliedOperations.push(operation.label);
+      if (operation.action === "generate_image") generatedImageCount += 1;
+      else if (operation.action === "search_open_image") sourcedImageCount += 1;
+      else importedImageCount += 1;
+    }
+    const project = {
+      ...application.project,
+      objects,
+      pages: application.project.pages.map((page) => page.id === application.project.activePageId
+        ? { ...page, canvas: application.snapshot.canvas, objects }
+        : page),
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      ...application,
+      project,
+      snapshot: { ...application.snapshot, objects },
+      changed: application.changed || generatedImageCount + importedImageCount + sourcedImageCount > 0,
+      generatedImageCount,
+      importedImageCount,
+      sourcedImageCount,
+    };
+  }
+
+  async function runAiAgent(request: AiAgentRequest, onProgress: (progress: AiAgentProgress) => void, signal: AbortSignal): Promise<AiAgentReceipt> {
+    const original = projectRef.current;
+    const baseRevisionId = original.currentRevisionId;
+    const runId = newId();
+    let draft = original;
+    let appliedCount = 0;
+    let skippedCount = 0;
+    let passCount = 0;
+    let latestSummary = "The artboard already matches your request.";
+    let latestAssessment = "No changes were needed.";
+    let generatedImageCount = 0;
+    let importedImageCount = 0;
+    let sourcedImageCount = 0;
+    let changedCount = 0;
+    const usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
+    let agentSessionId = request.agentSessionId;
+    const completedSteps: string[] = [];
+    const receipts: StoredAiPassReceipt[] = [];
+    const { createAiProjectContext } = await import("./lib/ai-plan");
+    const aiAssets = new Map((await listAssets(original.id)).map((asset) => [asset.id, { width: asset.width, height: asset.height }]));
+    let qualityReport = assessAiQuality(draft, { assets: aiAssets, originalProject: original, prompt: request.prompt, completedSteps, generatedImageCount });
+    let runRecord: StoredAiRun = {
+      id: runId,
+      projectId: original.id,
+      baseRevisionId,
+      status: "running",
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      currentPass: 0,
+      prompt: request.prompt,
+      connectionId: request.connectionId,
+      model: request.model,
+      reasoningEffort: request.reasoningEffort,
+      completedSteps: [],
+      receipts: [],
+      originalProject: original,
+      draftProject: draft,
+    };
+    let runWriteQueue = Promise.resolve();
+    const updateRun = (patch: Partial<StoredAiRun>) => {
+      runRecord = { ...runRecord, ...patch, updatedAt: new Date().toISOString() };
+      const snapshot = { ...runRecord, completedSteps: [...runRecord.completedSteps], receipts: [...runRecord.receipts] };
+      runWriteQueue = runWriteQueue.then(() => saveAiRun(snapshot));
+      return runWriteQueue;
+    };
+    const assertCurrentBase = () => {
+      if (projectRef.current.id !== original.id || projectRef.current.currentRevisionId !== baseRevisionId) {
+        const error = new Error("The artwork changed while AI was working, so the unfinished AI draft was not applied.");
+        error.name = "StaleAiRunError";
+        throw error;
+      }
+    };
+    setAiRunActive(true);
+    await updateRun({});
+    try {
+      for (let pass = 1; pass <= MAX_AI_VISUAL_PASSES; pass += 1) {
+        if (signal.aborted) throw new DOMException("AI run cancelled.", "AbortError");
+        assertCurrentBase();
+        passCount = pass;
+        const passStartedAt = new Date().toISOString();
+        let activeJobId: string | undefined;
+        await updateRun({ currentPass: pass, draftProject: draft, agentSessionId, completedSteps: [...completedSteps], receipts: [...receipts] });
+        onProgress({ pass, maxPasses: MAX_AI_VISUAL_PASSES, phase: "thinking", message: pass === 1 ? "Inspecting the artboard and choosing the first focused edit…" : "Reviewing the rendered result and choosing the next focused edit…" });
+        const preview = captureAiArtboard(pass);
+        const job = await accountConnections.requestAiTurn(
+          request.connectionId,
+          request.prompt,
+          createAiProjectContext(draft, { components, brandKits, exportAssets: aiAssets, qualityFindings: aiQualityFeedback(qualityReport) }),
+          request.model,
+          request.reasoningEffort,
+          [...request.attachments, preview],
+          {
+            pass,
+            maxPasses: MAX_AI_VISUAL_PASSES,
+            baseRevisionId,
+            runId,
+            sessionId: agentSessionId,
+            completedSteps,
+            qualityFindings: aiQualityFeedback(qualityReport),
+            conversationHistory: request.conversationHistory,
+          },
+          signal,
+          (currentJob) => {
+            activeJobId = currentJob.id;
+            void updateRun({ activeJobId: currentJob.id, agentSessionId: currentJob.agentSessionId ?? agentSessionId });
+          },
+        );
+        if (signal.aborted) throw new DOMException("AI run cancelled.", "AbortError");
+        assertCurrentBase();
+        agentSessionId = job.agentSessionId ?? agentSessionId;
+        if (job.usage) {
+          usage.inputTokens += job.usage.inputTokens;
+          usage.cachedInputTokens += job.usage.cachedInputTokens;
+          usage.outputTokens += job.usage.outputTokens;
+        }
+        const plan = job.plan!;
+        latestSummary = plan.summary;
+        latestAssessment = plan.assessment;
+        let passAppliedOperations: string[] = [];
+        let passSkippedOperations: string[] = [];
+        if (plan.operations.length > 0) {
+          onProgress({ pass, maxPasses: MAX_AI_VISUAL_PASSES, phase: "applying", message: `${plan.summary} Applying this focused step…` });
+          const application = await applyAiDecisionToDraft(draft, plan, request.attachments, {
+            connectionId: request.connectionId,
+            model: request.model,
+            reasoningEffort: request.reasoningEffort,
+            agentSessionId,
+            signal,
+          });
+          passAppliedOperations = [...application.appliedOperations, ...application.receipts];
+          passSkippedOperations = [...application.skippedOperations];
+          appliedCount += application.appliedOperations.length;
+          skippedCount += application.skippedOperations.length;
+          generatedImageCount += application.generatedImageCount;
+          importedImageCount += application.importedImageCount;
+          sourcedImageCount += application.sourcedImageCount;
+          completedSteps.push(...application.appliedOperations);
+          completedSteps.push(...application.receipts);
+          if (application.changed) {
+            changedCount += 1;
+            draft = application.project;
+            setCurrentProject(draft);
+            const selectedAfter = application.addedObjectIds.at(-1) ?? null;
+            await renderProject(draft, selectedAfter);
+            onProgress({ pass, maxPasses: MAX_AI_VISUAL_PASSES, phase: "inspecting", message: "That step is on the artboard. Rendering it for Luna to review before continuing…" });
+            await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+          }
+        }
+        qualityReport = assessAiQuality(draft, {
+          assets: aiAssets,
+          originalProject: original,
+          prompt: request.prompt,
+          completedSteps,
+          generatedImageCount,
+        });
+        const qualityFeedback = aiQualityFeedback(qualityReport);
+        const passReceipt: StoredAiPassReceipt = {
+          pass,
+          ...(activeJobId ? { jobId: activeJobId } : {}),
+          status: plan.done && plan.operations.length === 0 ? "completed" : "applied",
+          startedAt: passStartedAt,
+          finishedAt: new Date().toISOString(),
+          summary: plan.summary,
+          assessment: plan.assessment,
+          appliedOperations: passAppliedOperations,
+          skippedOperations: passSkippedOperations,
+          qualityFindings: qualityFeedback,
+          ...(job.usage ? { usage: job.usage } : {}),
+        };
+        receipts.push(passReceipt);
+        await updateRun({
+          activeJobId: undefined,
+          agentSessionId,
+          draftProject: draft,
+          completedSteps: [...completedSteps],
+          receipts: [...receipts],
+        });
+        const qualityBlocksCompletion = qualityReport.blockingFailures.length > 0 || qualityReport.findings.some((finding) => finding.severity === "error");
+        if (plan.done && plan.operations.length === 0 && !qualityBlocksCompletion) break;
+        if (plan.operations.length === 0 && !qualityBlocksCompletion) break;
+        if (qualityBlocksCompletion) completedSteps.push(...qualityFeedback.filter((finding) => /failed|ERROR/.test(finding)).slice(0, 8));
+      }
+
+      if (changedCount === 0) {
+        if (projectRef.current !== original) {
+          setCurrentProject(original);
+          await renderProject(original, selectedIdsRef.current);
+        }
+        await updateRun({ status: "completed", finishedAt: new Date().toISOString(), activeJobId: undefined, receipts: [...receipts], completedSteps: [...completedSteps] });
+        return { summary: latestSummary, assessment: latestAssessment, passCount, appliedCount, skippedCount, generatedImageCount, importedImageCount, sourcedImageCount, revisionNumber: null, agentSessionId, qualitySummary: qualityReport.summary, receipts, usage };
+      }
+
+      assertCurrentBase();
+      const next = commitAiProjectSession(original, draft, latestSummary);
+      setCurrentProject(next);
+      await renderProject(next, selectedIdsRef.current.filter((id) => next.objects.some((object) => object.id === id)));
+      await persist(next);
+      const revisionNumber = next.revisions[currentRevisionIndex(next)]?.number ?? next.revisions.length;
+      const mediaReceipt = generatedImageCount
+        ? ` ${generatedImageCount} generated image${generatedImageCount === 1 ? " was" : "s were"} added.`
+        : importedImageCount
+          ? ` ${importedImageCount} attached image${importedImageCount === 1 ? " was" : "s were"} added.`
+          : sourcedImageCount
+            ? ` ${sourcedImageCount} reusable open image${sourcedImageCount === 1 ? " was" : "s were"} added with its source receipt.`
+          : "";
+      setMessage(`${appliedCount} AI edit${appliedCount === 1 ? "" : "s"} completed after ${passCount} visual pass${passCount === 1 ? "" : "es"}.${mediaReceipt} Use Undo AI edits to revert the session.`);
+      await updateRun({ status: "completed", finishedAt: new Date().toISOString(), activeJobId: undefined, draftProject: next, receipts: [...receipts], completedSteps: [...completedSteps] });
+      return { summary: latestSummary, assessment: latestAssessment, passCount, appliedCount, skippedCount, generatedImageCount, importedImageCount, sourcedImageCount, revisionNumber, agentSessionId, qualitySummary: qualityReport.summary, receipts, usage };
+    } catch (error) {
+      const status: StoredAiRun["status"] = error instanceof Error && error.name === "AbortError"
+        ? "cancelled"
+        : error instanceof Error && error.name === "StaleAiRunError"
+          ? "stale"
+          : "failed";
+      receipts.push({
+        pass: Math.max(1, passCount),
+        status,
+        startedAt: runRecord.updatedAt,
+        finishedAt: new Date().toISOString(),
+        summary: error instanceof Error ? error.message : "AI run failed.",
+        assessment: "No partial AI draft was committed.",
+        appliedOperations: [],
+        skippedOperations: [],
+        qualityFindings: aiQualityFeedback(qualityReport),
+      });
+      await updateRun({ status, finishedAt: new Date().toISOString(), activeJobId: undefined, receipts: [...receipts], completedSteps: [...completedSteps] });
+      if (projectRef.current.id === original.id && projectRef.current.currentRevisionId === baseRevisionId) {
+        setCurrentProject(original);
+        await renderProject(original, selectedIdsRef.current);
+      }
+      throw error;
+    } finally {
+      await runWriteQueue;
+      setAiRunActive(false);
+    }
+  }
+
+  function undoAiEdits() {
+    const result = undoLatestAiSession(projectRef.current);
+    if (!result) return;
+    setCurrentProject(result.project);
+    const nextSelection = selectedId && result.project.objects.some((object) => object.id === selectedId) ? selectedId : null;
+    setSelectedId(nextSelection);
+    void renderProject(result.project, nextSelection);
+    void persist(result.project);
+    setMessage(result.conflictCount
+      ? `The latest AI session was undone. ${result.conflictCount} later manual change${result.conflictCount === 1 ? " was" : "s were"} kept.`
+      : "The latest AI session was undone.");
+  }
+
+  function redoAiEdits() {
+    const result = redoLatestAiSession(projectRef.current);
+    if (!result) return;
+    setCurrentProject(result.project);
+    const nextSelection = selectedId && result.project.objects.some((object) => object.id === selectedId) ? selectedId : null;
+    setSelectedId(nextSelection);
+    void renderProject(result.project, nextSelection);
+    void persist(result.project);
+    setMessage(result.conflictCount
+      ? `The latest undone AI session was restored. ${result.conflictCount} later manual change${result.conflictCount === 1 ? " was" : "s were"} kept.`
+      : "The latest undone AI session was restored.");
   }
 
   function changePreset(preset: Exclude<CanvasPreset, "custom">) {
     const next = setCanvasPreset(projectRef.current, preset);
     setCurrentProject(next);
-    void renderProject(next, selectedId);
+    void renderProject(next, selectedIdsRef.current);
     void persist(next);
   }
 
-  function exportImage(mimeType: "image/png" | "image/jpeg" | "image/webp") {
+  async function openExport(format: ExportFormat = "png") {
+    const details = new Map<string, ExportAssetDetail>();
+    await Promise.all(projectRef.current.objects.flatMap((object) => object.kind === "image"
+      ? [loadAsset(object.assetId).then((asset) => { if (asset) details.set(asset.id, { width: asset.width, height: asset.height }); })]
+      : []));
+    setExportAssets(details);
+    setExportFormat(format);
+    setExportOpen(true);
+  }
+
+  function captureExportDataUrl(settings: ExportSettings, mimeType: "image/png" | "image/jpeg" | "image/webp"): string {
     const stage = stageRef.current;
-    if (!stage) return;
-    const extension = mimeType.split("/")[1].replace("jpeg", "jpg");
-    const selected = selectedId;
+    const layer = layerRef.current;
+    if (!stage || !layer) throw new Error("The artboard is not ready to export.");
+    const selected = [...selectedIdsRef.current];
+    const primary = selectedId;
+    const hidden: Array<{ node: Konva.Node; visible: boolean }> = [];
+    const hide = (node: Konva.Node | null | undefined) => {
+      if (!node) return;
+      hidden.push({ node, visible: node.visible() });
+      node.hide();
+    };
     transformerRef.current?.nodes([]);
-    layerRef.current?.draw();
+    layer.find(".canvas-guide").forEach(hide);
+    layer.find(".snap-guide").forEach(hide);
+    if (settings.transparent && ["image/png", "image/webp"].includes(mimeType)) {
+      hide(artworkBackdropRef.current);
+      hide(artworkCardRef.current);
+      hide(artworkGroupRef.current?.findOne("#background"));
+    }
+    layer.draw();
+    try {
+      return stage.toDataURL({
+        pixelRatio: settings.width / stage.width(),
+        mimeType,
+        quality: settings.quality,
+      });
+    } finally {
+      for (const item of hidden) item.node.visible(item.visible);
+      selectByIds(selected, primary);
+      layer.draw();
+    }
+  }
+
+  async function performExport(settings: ExportSettings) {
+    const filename = safeFilename(projectRef.current.name);
     const anchor = document.createElement("a");
-    anchor.download = `${safeFilename(projectRef.current.name)}.${extension}`;
-    anchor.href = stage.toDataURL({
-      pixelRatio: 1 / displayDimensions(projectRef.current).scale,
-      mimeType,
-      quality: 0.92,
-    });
-    anchor.click();
-    selectById(selected);
+    if (["png", "jpeg", "webp"].includes(settings.format)) {
+      const mimeType = `image/${settings.format}` as "image/png" | "image/jpeg" | "image/webp";
+      anchor.download = `${filename}.${settings.format === "jpeg" ? "jpg" : settings.format}`;
+      anchor.href = captureExportDataUrl(settings, mimeType);
+      anchor.click();
+    } else if (settings.format === "svg") {
+      const dataUrl = captureExportDataUrl(settings, "image/png");
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${settings.width}" height="${settings.height}" viewBox="0 0 ${settings.width} ${settings.height}"><title>${projectRef.current.name.replace(/[<>&]/g, "")}</title><image href="${dataUrl}" width="${settings.width}" height="${settings.height}"/></svg>`;
+      anchor.download = `${filename}.svg`;
+      anchor.href = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(anchor.href), 0);
+    } else {
+      const original = projectRef.current;
+      const originalSelection = [...selectedIdsRef.current];
+      const sourcePages = original.pages.map((page) => page.id === original.activePageId
+        ? { ...page, canvas: original.canvas, objects: original.objects }
+        : page);
+      const pages = settings.allPages ? sourcePages : sourcePages.filter((page) => page.id === original.activePageId);
+      const scale = settings.width / original.canvas.width;
+      const pdfPages: PdfImagePage[] = [];
+      try {
+        for (const sourcePage of pages) {
+          const pageProject: GlassWareProject = {
+            ...original,
+            canvas: sourcePage.canvas,
+            objects: sourcePage.objects,
+            activePageId: sourcePage.id,
+            currentRevisionId: sourcePage.currentRevisionId,
+          };
+          await renderProject(pageProject, null);
+          const pagePixelWidth = Math.max(1, Math.round(sourcePage.canvas.width * scale));
+          const pagePixelHeight = Math.max(1, Math.round(sourcePage.canvas.height * scale));
+          const dataUrl = captureExportDataUrl({ ...settings, width: pagePixelWidth, height: pagePixelHeight, transparent: false, quality: Math.max(0.92, settings.quality) }, "image/jpeg");
+          const bytes = new Uint8Array(await (await fetch(dataUrl)).arrayBuffer());
+          const pageWidth = pagePixelWidth / settings.dpi * 72;
+          const pageHeight = pagePixelHeight / settings.dpi * 72;
+          pdfPages.push({ jpeg: bytes, pixelWidth: pagePixelWidth, pixelHeight: pagePixelHeight, widthPoints: pageWidth, heightPoints: pageHeight });
+        }
+      } finally {
+        await renderProject(original, originalSelection);
+      }
+      const savedPdf = buildImagePdf(pdfPages, original.name);
+      const blob = new Blob([Uint8Array.from(savedPdf).buffer], { type: "application/pdf" });
+      anchor.download = `${filename}.pdf`;
+      anchor.href = URL.createObjectURL(blob);
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(anchor.href), 0);
+    }
+    setMessage(settings.format === "pdf" && settings.allPages
+      ? `Exported ${projectRef.current.pages.length} pages to PDF.`
+      : `Exported ${settings.width} × ${settings.height} ${settings.format.toUpperCase()}.`);
   }
 
   async function exportProjectFile() {
@@ -1521,6 +2981,7 @@ function Editor({
         await registerFont(font);
         await saveFontAsset(font);
       }
+      for (const component of imported.components) await saveComponent(component);
       await saveProject(imported.project);
       replaceProject(imported.project);
     } catch (error) {
@@ -1535,6 +2996,169 @@ function Editor({
     const next = createProject("Untitled stitch", false);
     await saveProject(next);
     replaceProject(next);
+  }
+
+  function applyPageChange(next: GlassWareProject, selection: string[] = []) {
+    setCurrentProject(next);
+    selectedIdsRef.current = selection;
+    setSelectedIds(selection);
+    setSelectedId(selection.at(-1) ?? null);
+    void renderProject(next, selection);
+    void persist(next);
+  }
+
+  function switchPage(pageId: string) {
+    applyPageChange(activatePage(projectRef.current, pageId));
+  }
+
+  function createPage(duplicate: boolean) {
+    const next = addProjectPage(projectRef.current, duplicate);
+    applyPageChange(next, duplicate ? next.objects.map((object) => object.id) : []);
+  }
+
+  function removePage(pageId: string) {
+    const page = projectRef.current.pages.find((item) => item.id === pageId);
+    if (!page || projectRef.current.pages.length <= 1 || !window.confirm(`Delete “${page.name}” and its layers from this project?`)) return;
+    applyPageChange(deleteProjectPage(projectRef.current, pageId));
+  }
+
+  function movePage(pageId: string, direction: -1 | 1) {
+    const next = reorderProjectPage(projectRef.current, pageId, direction);
+    setCurrentProject(next);
+    void persist(next);
+  }
+
+  function renamePage(pageId: string, name: string) {
+    const next = renameProjectPage(projectRef.current, pageId, name);
+    setCurrentProject(next);
+    void persist(next);
+  }
+
+  function useTemplate(templateId: string) {
+    const template = GLASSWARE_TEMPLATES.find((item) => item.id === templateId);
+    if (!template || (projectRef.current.objects.length && !window.confirm(`Apply “${template.name}” to this page? The current page remains available through Undo.`))) return;
+    const next = applyTemplate(projectRef.current, templateId);
+    applyPageChange(next);
+  }
+
+  async function createBrandKit() {
+    const colors = [...new Set([
+      projectRef.current.canvas.background,
+      ...projectRef.current.objects.flatMap((object) => object.kind === "image" ? [] : [object.fill]),
+    ])].slice(0, 12);
+    const fontFamilies = [...new Set(projectRef.current.objects.flatMap((object) => object.kind === "text" ? [object.fontFamily] : []))];
+    const createdAt = new Date().toISOString();
+    const kit: StoredBrandKit = { id: newId(), name: `Brand kit ${brandKits.length + 1}`, colors: colors.length ? colors : ["#111111", "#ffffff"], fontFamilies, createdAt, updatedAt: createdAt };
+    await saveBrandKit(kit);
+    setBrandKits((current) => [kit, ...current]);
+  }
+
+  async function updateBrandKit(kit: StoredBrandKit, patch: Partial<Pick<StoredBrandKit, "name" | "colors" | "fontFamilies">>) {
+    const next = { ...kit, ...patch, updatedAt: new Date().toISOString() };
+    await saveBrandKit(next);
+    setBrandKits((current) => current.map((item) => item.id === kit.id ? next : item));
+  }
+
+  async function removeBrandKit(kitId: string) {
+    await deleteBrandKit(kitId);
+    setBrandKits((current) => current.filter((kit) => kit.id !== kitId));
+  }
+
+  function applyBrandColor(color: string) {
+    const layer = layerRef.current;
+    if (!layer) return;
+    const ids = new Set(selectedIdsRef.current);
+    if (!ids.size) {
+      setBackground(color);
+      return;
+    }
+    for (const id of ids) {
+      const object = projectRef.current.objects.find((item) => item.id === id);
+      const node = findDesignNode(layer, id);
+      if (!object || object.kind === "image" || !node || object.locked) continue;
+      applyDesignFill(node, color);
+    }
+    layer.batchDraw();
+    commitCanvas("Brand color applied");
+  }
+
+  function applyBrandFont(fontFamily: string) {
+    const layer = layerRef.current;
+    if (!layer) return;
+    for (const id of selectedIdsRef.current) {
+      const node = findDesignNode(layer, id);
+      if (node instanceof Konva.Text && !node.getAttr("designLocked")) node.fontFamily(fontFamily);
+    }
+    layer.batchDraw();
+    commitCanvas("Brand typeface applied");
+  }
+
+  async function saveSelectionAsComponent() {
+    const layer = layerRef.current;
+    if (!layer || !selectedIdsRef.current.length) return;
+    const selected = serializeLayer(layer).filter((object) => selectedIdsRef.current.includes(object.id));
+    const component: StoredComponent = {
+      id: newId(), projectId: projectRef.current.id,
+      name: selected.length === 1 ? selected[0].name : `Component ${components.length + 1}`,
+      objects: selected, createdAt: new Date().toISOString(),
+    };
+    await saveComponent(component);
+    setComponents((current) => [component, ...current]);
+    setMessage("Reusable component saved for this project.");
+  }
+
+  function insertComponent(component: StoredComponent) {
+    const inserted = cloneComponentObjects(component.objects, 32);
+    const next = commitSnapshot(projectRef.current, `Component inserted: ${component.name}`, {
+      canvas: projectRef.current.canvas,
+      objects: [...projectRef.current.objects, ...inserted],
+    });
+    applyPageChange(next, inserted.map((object) => object.id));
+  }
+
+  async function removeComponent(componentId: string) {
+    await deleteComponent(componentId);
+    setComponents((current) => current.filter((component) => component.id !== componentId));
+  }
+
+  async function refreshProjectGallery() {
+    const projects = await listProjects();
+    const sizes = new Map<string, number>();
+    await Promise.all(projects.map(async (item) => {
+      const assets = await listAssets(item.id);
+      sizes.set(item.id, assets.reduce((total, asset) => total + asset.size, 0));
+    }));
+    setRecentProjects(projects);
+    setProjectStorageBytes(sizes);
+  }
+
+  async function duplicateLocalProject(projectId: string) {
+    const source = projectId === projectRef.current.id ? projectRef.current : await loadProject(projectId);
+    if (!source) return;
+    try {
+      const duplicate = await readProjectBundle(JSON.stringify(await buildProjectBundle(source)));
+      for (const asset of duplicate.assets) await saveAsset(asset);
+      for (const font of duplicate.fonts) await saveFontAsset(font);
+      for (const component of duplicate.components) await saveComponent(component);
+      await saveProject(duplicate.project);
+      await refreshProjectGallery();
+      replaceProject(duplicate.project);
+    } catch (error) {
+      console.error(error);
+      setMessage("The project could not be duplicated.");
+    }
+  }
+
+  async function removeLocalProject(projectId: string) {
+    const target = recentProjects.find((item) => item.id === projectId);
+    if (!target || !window.confirm(`Delete “${target.name}” from this device? Its local images and AI conversations will also be removed. A cloud copy is not deleted.`)) return;
+    await deleteProject(projectId);
+    const remaining = (await listProjects()).filter((item) => item.id !== projectId);
+    const next = remaining[0] ?? createProject("Untitled stitch", false);
+    if (!remaining[0]) await saveProject(next);
+    await refreshProjectGallery();
+    if (projectId === projectRef.current.id) replaceProject(next);
+    else setMessage("Local project removed. Any cloud copy remains available.");
   }
 
   async function createStudioPlayground() {
@@ -1573,7 +3197,7 @@ function Editor({
               const dropClass = layerDropTarget?.id === object.id ? `drop-${layerDropTarget.edge}` : "";
               return (
                 <div
-                  className={`layer-row ${selectedId === object.id ? "selected" : ""} ${draggedLayerId === object.id ? "dragging" : ""} ${dropClass}`}
+                  className={`layer-row ${selectedIds.includes(object.id) ? "selected" : ""} ${draggedLayerId === object.id ? "dragging" : ""} ${dropClass}`}
                   draggable
                   key={object.id}
                   onDragStart={(event) => layerDragStart(event, object.id)}
@@ -1583,9 +3207,9 @@ function Editor({
                 >
                   <button className="layer-drag-handle" title={`Drag ${object.name} to reorder`} aria-label={`Drag ${object.name} to reorder`}><GripVertical size={15} /></button>
                   <button className="layer-icon-button" title={object.visible ? "Hide layer" : "Show layer"} aria-label={object.visible ? "Hide layer" : "Show layer"} onClick={() => toggleVisibility(object.id)}>{object.visible ? <Eye size={15} /> : <EyeOff size={15} />}</button>
-                  <button className="layer-main" title={`Select ${object.name}`} onClick={() => selectById(object.id)}>
+                  <button className="layer-main" title={`Select ${object.name}. Hold Shift to add to the selection.`} onClick={(event) => selectById(object.id, event.shiftKey || event.metaKey || event.ctrlKey)}>
                     <span className={`layer-thumbnail kind-${object.kind}`}>{object.kind === "text" ? <Type size={18} /> : object.kind === "image" ? <ImagePlus size={17} /> : <Shapes size={17} />}</span>
-                    <span><strong>{object.name}</strong><small>{object.kind}</small></span>
+                    <span><strong>{object.name}</strong><small>{object.kind}{object.groupId ? " · grouped" : ""}</small></span>
                   </button>
                   <button className="layer-icon-button" title={object.locked ? "Unlock layer" : "Lock layer"} aria-label={object.locked ? "Unlock layer" : "Lock layer"} onClick={() => toggleLock(object.id)}>{object.locked ? <Lock size={14} /> : <Unlock size={14} />}</button>
                 </div>
@@ -1594,14 +3218,88 @@ function Editor({
           </div>
           {!project.objects.length && <p className="empty-note">This artboard is empty. Add text, a shape, or an image to begin.</p>}
           <div className="layer-toolbar" aria-label="Layer actions">
-            <button title="Add text layer" aria-label="Add text layer" onClick={() => void addText("body")}><Plus size={16} /></button>
-            <button title="Duplicate selected layer" aria-label="Duplicate selected layer" disabled={!selectedObject} onClick={duplicateSelected}><Copy size={15} /></button>
-            <button title="Raise selected layer" aria-label="Raise selected layer" disabled={!selectedObject} onClick={() => selectedObject && reorder(selectedObject.id, "up")}><ChevronUp size={16} /></button>
-            <button title="Lower selected layer" aria-label="Lower selected layer" disabled={!selectedObject} onClick={() => selectedObject && reorder(selectedObject.id, "down")}><ChevronDown size={16} /></button>
-            <span />
-            <button className="danger" title="Delete selected layer" aria-label="Delete selected layer" disabled={!selectedObject} onClick={deleteSelected}><Trash2 size={16} /></button>
+            <div className="layer-toolbar-row">
+              <button title="Add text layer" aria-label="Add text layer" onClick={() => void addText("body")}><Plus size={16} /></button>
+              <button title="Duplicate selected layers" aria-label="Duplicate selected layers" disabled={!selectedIds.length} onClick={duplicateSelected}><Copy size={15} /></button>
+              <button title="Raise selected layer" aria-label="Raise selected layer" disabled={selectedIds.length !== 1 || !selectedObject} onClick={() => selectedObject && reorder(selectedObject.id, "up")}><ChevronUp size={16} /></button>
+              <button title="Lower selected layer" aria-label="Lower selected layer" disabled={selectedIds.length !== 1 || !selectedObject} onClick={() => selectedObject && reorder(selectedObject.id, "down")}><ChevronDown size={16} /></button>
+              <span />
+              <button className="danger" title="Delete selected layers" aria-label="Delete selected layers" disabled={!selectedIds.length} onClick={deleteSelected}><Trash2 size={16} /></button>
+            </div>
+            <div className="layer-toolbar-row layer-toolbar-layout" aria-label="Selection grouping and alignment">
+              <button title="Group selected layers" aria-label="Group selected layers" disabled={selectedIds.length < 2} onClick={groupSelection}><Group size={15} /></button>
+              <button title="Ungroup selected layers" aria-label="Ungroup selected layers" disabled={!selectedObjects.some((object) => object.groupId)} onClick={ungroupSelection}><Ungroup size={15} /></button>
+              <button title="Align left" aria-label="Align left" disabled={!selectedIds.length} onClick={() => alignSelection("left")}><AlignHorizontalJustifyStart size={15} /></button>
+              <button title="Align horizontal center" aria-label="Align horizontal center" disabled={!selectedIds.length} onClick={() => alignSelection("center")}><AlignCenterHorizontal size={15} /></button>
+              <button title="Align right" aria-label="Align right" disabled={!selectedIds.length} onClick={() => alignSelection("right")}><AlignHorizontalJustifyEnd size={15} /></button>
+              <button title="Align top" aria-label="Align top" disabled={!selectedIds.length} onClick={() => alignSelection("top")}><AlignVerticalJustifyStart size={15} /></button>
+              <button title="Align vertical center" aria-label="Align vertical center" disabled={!selectedIds.length} onClick={() => alignSelection("middle")}><AlignCenterVertical size={15} /></button>
+              <button title="Align bottom" aria-label="Align bottom" disabled={!selectedIds.length} onClick={() => alignSelection("bottom")}><AlignVerticalJustifyEnd size={15} /></button>
+              <button title="Distribute horizontally" aria-label="Distribute horizontally" disabled={selectedIds.length < 3} onClick={() => distributeSelection("horizontal")}><AlignHorizontalSpaceBetween size={15} /></button>
+              <button title="Distribute vertically" aria-label="Distribute vertically" disabled={selectedIds.length < 3} onClick={() => distributeSelection("vertical")}><AlignVerticalSpaceBetween size={15} /></button>
+            </div>
+            <label className="layer-align-reference"><span>Align to</span><select value={alignmentReference} onChange={(event) => setAlignmentReference(event.target.value as AlignmentReference)}><option value="selection">Selection</option><option value="canvas">Artboard</option></select></label>
+            <div className="layer-toolbar-row layer-toolbar-global" aria-label="All layer controls">
+              <button type="button" title="Hide all layers" aria-label="Hide all layers" disabled={!project.objects.some((object) => object.visible)} onClick={() => setAllLayerVisibility(false)}><EyeOff size={15} /></button>
+              <button type="button" title="Show all layers" aria-label="Show all layers" disabled={!project.objects.some((object) => !object.visible)} onClick={() => setAllLayerVisibility(true)}><Eye size={15} /></button>
+              <button type="button" title="Lock all layers against canvas and AI edits" aria-label="Lock all layers" disabled={!project.objects.some((object) => !object.locked)} onClick={() => setAllLayerLock(true)}><Lock size={14} /></button>
+              <button type="button" title="Unlock all layers" aria-label="Unlock all layers" disabled={!project.objects.some((object) => object.locked)} onClick={() => setAllLayerLock(false)}><Unlock size={14} /></button>
+            </div>
           </div>
         </div>
+      );
+    }
+    if (activeTool === "Library") {
+      return (
+        <>
+          <div className="panel-heading"><p>REUSABLE DESIGN SYSTEM</p><h1>Library</h1></div>
+          <div className="library-tabs" role="tablist" aria-label="Design library sections">
+            <button role="tab" aria-selected={libraryTab === "templates"} className={libraryTab === "templates" ? "active" : ""} onClick={() => setLibraryTab("templates")}>Templates</button>
+            <button role="tab" aria-selected={libraryTab === "brand"} className={libraryTab === "brand" ? "active" : ""} onClick={() => setLibraryTab("brand")}>Brand</button>
+            <button role="tab" aria-selected={libraryTab === "components"} className={libraryTab === "components" ? "active" : ""} onClick={() => setLibraryTab("components")}>Components</button>
+          </div>
+          {libraryTab === "templates" && (
+            <div className="template-library">
+              {GLASSWARE_TEMPLATES.map((template) => (
+                <article key={template.id}>
+                  <button className="template-preview" onClick={() => useTemplate(template.id)} title={`Apply ${template.name} to this page`} style={{ background: `linear-gradient(135deg, ${template.colors[0]} 0 48%, ${template.colors[1]} 48% 72%, ${template.colors[2]} 72%)` }}><span>Use template</span></button>
+                  <strong>{template.name}</strong><small>{template.category} · {template.canvas.width} × {template.canvas.height}</small><p>{template.description}</p>
+                </article>
+              ))}
+              <p className="library-note">Bundled GlassWare templates contain only editable text and vector shapes. No stock artwork or restrictive template license is involved.</p>
+            </div>
+          )}
+          {libraryTab === "brand" && (
+            <div className="brand-library">
+              <button className="library-primary" onClick={() => void createBrandKit()}><Plus size={15} /> New kit from this page</button>
+              {brandKits.map((kit) => (
+                <article className="brand-kit-card" key={kit.id}>
+                  <header><input aria-label="Brand kit name" value={kit.name} onChange={(event) => void updateBrandKit(kit, { name: event.target.value.slice(0, 80) })} /><button title={`Delete ${kit.name}`} aria-label={`Delete ${kit.name}`} onClick={() => void removeBrandKit(kit.id)}><Trash2 size={14} /></button></header>
+                  <div className="brand-colors" aria-label={`${kit.name} colors`}>
+                    {kit.colors.map((color, index) => <button key={`${color}-${index}`} style={{ background: color }} title={`Apply ${color}. Right-click to remove.`} aria-label={`Apply brand color ${color}`} onClick={() => applyBrandColor(color)} onContextMenu={(event) => { event.preventDefault(); void updateBrandKit(kit, { colors: kit.colors.filter((_, itemIndex) => itemIndex !== index) }); }} />)}
+                    {kit.colors.length < 12 && <label title="Add brand color"><Plus size={13} /><input aria-label="Add brand color" type="color" onChange={(event) => void updateBrandKit(kit, { colors: [...new Set([...kit.colors, event.target.value])].slice(0, 12) })} /></label>}
+                  </div>
+                  <div className="brand-fonts">
+                    {kit.fontFamilies.map((family) => <button key={family} onClick={() => applyBrandFont(family)} title={`Apply ${family} to selected text`}><strong style={{ fontFamily: family }}>{family}</strong><span onClick={(event) => { event.stopPropagation(); void updateBrandKit(kit, { fontFamilies: kit.fontFamilies.filter((item) => item !== family) }); }}>×</span></button>)}
+                    <select aria-label={`Add typeface to ${kit.name}`} value="" onChange={(event) => event.target.value && void updateBrandKit(kit, { fontFamilies: [...new Set([...kit.fontFamilies, event.target.value])] })}><option value="">+ Add typeface</option>{[...new Set([...SYSTEM_FONTS, ...fontAssets.map((font) => font.family)])].map((family) => <option value={family} key={family}>{family}</option>)}</select>
+                  </div>
+                  <p>Choose a color to apply it to selected text or shapes—or to the artboard when nothing is selected. Right-click a swatch to remove it.</p>
+                </article>
+              ))}
+              {!brandKits.length && <p className="empty-note">Create a kit from the colors and typefaces already used on this page.</p>}
+            </div>
+          )}
+          {libraryTab === "components" && (
+            <div className="component-library">
+              <button className="library-primary" disabled={!selectedIds.length} onClick={() => void saveSelectionAsComponent()}><Save size={15} /> Save selected layers</button>
+              {components.map((component) => (
+                <article key={component.id}><button className="component-insert" onClick={() => insertComponent(component)}><Group size={18} /><span><strong>{component.name}</strong><small>{component.objects.length} editable layer{component.objects.length === 1 ? "" : "s"}</small></span></button><button title={`Delete ${component.name}`} aria-label={`Delete ${component.name}`} onClick={() => void removeComponent(component.id)}><Trash2 size={14} /></button></article>
+              ))}
+              {!components.length && <p className="empty-note">Select one or more layers, then save them as a reusable project component.</p>}
+              <p className="library-note">Components stay linked to this project. They are included in portable copies and project cloud sync with their referenced image assets.</p>
+            </div>
+          )}
+        </>
       );
     }
     if (activeTool === "Files") {
@@ -1614,54 +3312,79 @@ function Editor({
             <button onClick={() => projectInput.current?.click()}><FolderOpen size={18} /><span><strong>Open a project</strong><small>Import an .glassware.json file</small></span></button>
             <button onClick={() => void exportProjectFile()}><Save size={18} /><span><strong>Save a portable copy</strong><small>Includes every local image asset</small></span></button>
           </div>
-          {recentProjects.length > 1 && (
-            <div className="panel-section">
-              <label className="field-label" htmlFor="recent-project">Recent on this device</label>
-              <select id="recent-project" value={project.id} onChange={(event) => void switchProject(event.target.value)}>
-                {recentProjects.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
-              </select>
-            </div>
+          <section className="project-pages" aria-label="Project pages">
+            <header><span>Pages</span><div><button title="Add blank page" aria-label="Add blank page" onClick={() => createPage(false)}><Plus size={14} /></button><button title="Duplicate active page" aria-label="Duplicate active page" onClick={() => createPage(true)}><Copy size={14} /></button></div></header>
+            {project.pages.map((page, index) => (
+              <div className={`project-page-row ${page.id === project.activePageId ? "active" : ""}`} key={page.id}>
+                <button className="project-page-open" onClick={() => switchPage(page.id)} title={`Open ${page.name}`}><span>{String(index + 1).padStart(2, "0")}</span></button>
+                <input aria-label={`Name page ${index + 1}`} value={page.name} onChange={(event) => renamePage(page.id, event.target.value)} />
+                <button title="Move page up" aria-label={`Move ${page.name} up`} disabled={index === 0} onClick={() => movePage(page.id, -1)}><ChevronUp size={14} /></button>
+                <button title="Move page down" aria-label={`Move ${page.name} down`} disabled={index === project.pages.length - 1} onClick={() => movePage(page.id, 1)}><ChevronDown size={14} /></button>
+                <button className="danger" title="Delete page" aria-label={`Delete ${page.name}`} disabled={project.pages.length === 1} onClick={() => removePage(page.id)}><Trash2 size={14} /></button>
+              </div>
+            ))}
+          </section>
+          {accountConnections.snapshot.account?.mode === "authenticated" && accountConnections.snapshot.billing.cloudAccess !== "none" && (
+            <section className="cloud-projects" aria-label="Cloud projects">
+              <header><span><Cloud size={15} /> Cloud projects</span><small>{cloudProjects.length} synced</small></header>
+              {accountConnections.snapshot.billing.cloudAccess === "download_only"
+                ? <p>Cloud projects are download-only until billing is restored.</p>
+                : !accountConnections.snapshot.syncEnabled && <p>Turn on Project sync in Account to upload local changes. Existing cloud projects remain available.</p>}
+              {cloudProjects.map((item) => {
+                const local = item.id === project.id ? project : recentProjects.find((entry) => entry.id === item.id);
+                const cloudNewer = !local || item.updatedAt > local.updatedAt;
+                return (
+                  <div className="cloud-project-row" key={item.id}>
+                    <button className="cloud-project-open" onClick={() => void restoreCloudProject(item.id)} title={`Open ${item.name} from cloud`}>
+                      {item.thumbnailDataUrl
+                        ? <img src={item.thumbnailDataUrl} alt="" />
+                        : <span className="cloud-project-placeholder"><Cloud size={18} /></span>}
+                      <span><strong>{item.name}</strong><small>{cloudNewer ? "Cloud copy available" : "Up to date"} · {Math.max(1, Math.round(item.size / 1024))} KB</small></span>
+                    </button>
+                    <button className="cloud-project-delete" onClick={() => void removeCloudProject(item.id)} title={`Remove cloud copy of ${item.name}`} aria-label={`Remove cloud copy of ${item.name}`}><Trash2 size={14} /></button>
+                  </div>
+                );
+              })}
+              {!cloudProjects.length && <p>No cloud projects yet. Enable Project sync, then press Save.</p>}
+            </section>
+          )}
+          {recentProjects.length > 0 && (
+            <section className="local-projects" aria-label="Projects on this device">
+              <header><span>On this device</span><small>{formatBytes([...projectStorageBytes.values()].reduce((total, size) => total + size, 0))} in original images</small></header>
+              {recentProjects.map((item) => (
+                <div className={`local-project-row ${item.id === project.id ? "active" : ""}`} key={item.id}>
+                  <button className="local-project-open" onClick={() => void switchProject(item.id)} title={`Open ${item.name}`}>
+                    <span><strong>{item.name}</strong><small>{item.canvas.width} × {item.canvas.height} · {item.objects.length} layers · {formatBytes(projectStorageBytes.get(item.id) ?? 0)}</small></span>
+                  </button>
+                  <button title={`Duplicate ${item.name}`} aria-label={`Duplicate ${item.name}`} onClick={() => void duplicateLocalProject(item.id)}><Copy size={14} /></button>
+                  <button className="danger" title={`Delete ${item.name} from this device`} aria-label={`Delete ${item.name} from this device`} disabled={recentProjects.length === 1} onClick={() => void removeLocalProject(item.id)}><Trash2 size={14} /></button>
+                </div>
+              ))}
+            </section>
           )}
         </>
       );
     }
-    if (activeTool === "AI") {
-      return <AiConnectionsPanel model={accountConnections} project={project} openSettings={() => setAiSettingsOpen(true)} />;
-    }
     if (activeTool === "Account") {
-      return <AccountPanel model={accountConnections} openSignIn={() => setSignInOpen(true)} />;
+      return <AccountPanel model={accountConnections} cloudProjectCount={cloudProjects.length} openSignIn={() => setSignInOpen(true)} />;
     }
     if (activeTool === "Images") {
       return <ImagePanel upload={() => fileInput.current?.click()} addOpenImage={addOpenverseImage} />;
     }
     if (activeTool === "Studio") {
       return (
-        <StudioPanel
-          target={studioTarget}
-          setTarget={setStudioTarget}
-          image={selectedObject?.kind === "image" ? selectedObject : null}
-          artwork={project.canvas.presentation}
-          maxArtworkPadding={Math.floor(Math.min(project.canvas.width, project.canvas.height) * 0.4)}
-          uploadBackdrop={() => backdropImageInput.current?.click()}
-          applyOperations={applyStudioOperations}
-          updatePresentation={updateStudioPresentation}
-        />
-      );
-    }
-    if (activeTool === "Annotate") {
-      return (
-        <>
-          <div className="panel-heading"><p>SCREENSHOT MARKUP</p><h1>Annotate</h1></div>
-          <div className="annotation-library">
-            {ANNOTATION_OPTIONS.map((option) => (
-              <button key={option.kind} onClick={() => void addShape(option.kind)} aria-label={`Add ${option.label}`}>
-                <ShapeIcon shape={option.kind} />
-                <span><strong>{option.label}</strong><small>{option.note}</small></span>
-              </button>
-            ))}
-          </div>
-          <div className="panel-section hint-card"><strong>Blur is visual, redact is private</strong><p>Use Blur for presentation polish. Use Redact when information must be irreversibly covered in an exported image.</p></div>
-        </>
+        <Suspense fallback={<div className="panel-section hint-card"><strong>Opening Studio…</strong><p>Loading presentation controls.</p></div>}>
+          <StudioPanel
+            target={studioTarget}
+            setTarget={setStudioTarget}
+            image={selectedObject?.kind === "image" ? selectedObject : null}
+            artwork={project.canvas.presentation}
+            maxArtworkPadding={Math.floor(Math.min(project.canvas.width, project.canvas.height) * 0.4)}
+            uploadBackdrop={() => backdropImageInput.current?.click()}
+            applyOperations={applyStudioOperations}
+            updatePresentation={updateStudioPresentation}
+          />
+        </Suspense>
       );
     }
     if (activeTool === "Text") {
@@ -1680,7 +3403,18 @@ function Editor({
     if (activeTool === "Shapes") {
       return (
         <>
-          <div className="panel-heading"><p>ELEMENT LIBRARY</p><h1>Shapes</h1></div>
+          <div className="panel-heading"><p>ELEMENT LIBRARY</p><h1>Shapes &amp; markup</h1></div>
+          <div className="section-label"><span>Markup &amp; privacy</span><small>Above the content</small></div>
+          <div className="annotation-library">
+            {ANNOTATION_OPTIONS.map((option) => (
+              <button key={option.kind} onClick={() => void addShape(option.kind, "annotation")} aria-label={`Add ${option.label}`}>
+                <ShapeIcon shape={option.kind} />
+                <span><strong>{option.label}</strong><small>{option.note}</small></span>
+              </button>
+            ))}
+          </div>
+          <div className="panel-section">
+            <div className="section-label"><span>Basic shapes</span><small>Fully editable</small></div>
           <div className="shape-library">
             {SHAPE_OPTIONS.map((option) => (
               <button key={option.kind} onClick={() => void addShape(option.kind)} aria-label={`Add ${option.label}`}>
@@ -1689,13 +3423,18 @@ function Editor({
               </button>
             ))}
           </div>
-          <div className="panel-section hint-card"><strong>Built to stay editable</strong><p>Every shape can be resized, rotated, recolored, layered, duplicated, and undone.</p></div>
+          </div>
+          <div className="panel-section hint-card"><strong>Blur versus redact</strong><p>Select a layer first and Blur region or Secure redact will land over it. Blur samples every visible layer underneath. Secure redact is deliberately opaque black so covered pixels cannot be recovered from the exported image.</p></div>
         </>
       );
     }
     return (
       <>
-        <div className="panel-heading"><p>ARTBOARD SETUP</p><h1>Canvas</h1></div>
+        <div className="panel-heading"><p>SELECT &amp; LAYOUT</p><h1>Canvas</h1></div>
+        <div className="selection-summary">
+          <BoxSelect size={18} />
+          <span><strong>{selectedIds.length ? `${selectedIds.length} layer${selectedIds.length === 1 ? "" : "s"} selected` : "Marquee selection"}</strong><small>Drag empty canvas to select. Hold Shift to add layers.</small></span>
+        </div>
         <div className="panel-section">
           <div className="section-label"><span>Canvas size</span><small>{project.canvas.width} × {project.canvas.height}</small></div>
           <div className="preset-grid">
@@ -1705,16 +3444,35 @@ function Editor({
           </div>
         </div>
         <div className="panel-section"><ColorPicker label="Artboard color" value={project.canvas.background} onPreview={previewBackground} onCommit={setBackground} /></div>
+        <div className="panel-section guide-settings">
+          <div className="section-label"><span><Ruler size={14} /> Guides &amp; snapping</span><small>{project.canvas.guides.length} guides</small></div>
+          <div className="guide-toggle-row">
+            <label className="switch-row"><input type="checkbox" checked={project.canvas.showRulers} onChange={(event) => updateCanvasWorkspace({ showRulers: event.target.checked }, event.target.checked ? "Rulers shown" : "Rulers hidden")} /><span>Show rulers</span></label>
+            <label className="switch-row"><input type="checkbox" checked={project.canvas.snapping.enabled} onChange={(event) => updateCanvasWorkspace({ snapping: { ...project.canvas.snapping, enabled: event.target.checked } }, event.target.checked ? "Snapping enabled" : "Snapping disabled")} /><span>Snap while moving</span></label>
+          </div>
+          <div className="guide-add-row">
+            <button onClick={() => addCanvasGuide("x")} title="Add a vertical guide at the artboard center">+ Vertical</button>
+            <button onClick={() => addCanvasGuide("y")} title="Add a horizontal guide at the artboard center">+ Horizontal</button>
+          </div>
+          {project.canvas.guides.map((guide) => (
+            <label className="guide-row" key={guide.id}>
+              <span>{guide.axis === "x" ? "V" : "H"}</span>
+              <input type="number" defaultValue={Math.round(guide.position)} min="0" max={guide.axis === "x" ? project.canvas.width : project.canvas.height} onBlur={(event) => updateCanvasGuide(guide.id, Number(event.target.value))} aria-label={`${guide.axis === "x" ? "Vertical" : "Horizontal"} guide position`} />
+              <small>px</small>
+              <button onClick={() => removeCanvasGuide(guide.id)} title="Remove guide" aria-label="Remove guide"><Trash2 size={13} /></button>
+            </label>
+          ))}
+        </div>
         <div className="panel-section hint-card"><strong>Keyboard friendly</strong><p>Paste images, nudge with arrow keys, duplicate with ⌘/Ctrl+D, and undo with ⌘/Ctrl+Z.</p></div>
       </>
     );
   }
 
   return (
-    <main className="workbench">
+    <main className={`workbench ${aiRunActive ? "ai-run-active" : ""}`}>
       <header className="topbar">
         <button className="brand" onClick={() => setActiveTool("Files")} aria-label="Open GlassWare files">
-          <img src="./glassware-mark.svg" alt="" /><span>GlassWare</span><small>LOCAL WORKBENCH</small>
+          <img src="./glassware-mark.svg" alt="" /><span>GlassWare</span><small>CREATIVE WORKBENCH</small>
         </button>
         <label className="project-name">
           <span>Project</span>
@@ -1722,10 +3480,11 @@ function Editor({
         </label>
         <div className="top-actions">
           <button className="icon-button" aria-label="Undo" title="Undo (Ctrl/⌘+Z)" disabled={!canUndo(project)} onClick={undo}><Undo2 size={18} /></button>
-          <button className="icon-button" aria-label="Redo" title="Redo (Ctrl/⌘+Shift+Z)" disabled={!canRedo(project)} onClick={redo}><Redo2 size={18} /></button>
-          <button className="ai-button" onClick={() => setActiveTool("AI")}><Sparkles size={17} /> Ask AI</button>
-          <button className="account-button" onClick={() => accountConnections.snapshot.account ? setActiveTool("Account") : setSignInOpen(true)}><UserRound size={17} /> {accountConnections.snapshot.account?.displayName ?? "Sign in"}</button>
-          <button className="export-button" onClick={() => exportImage("image/png")}><Download size={17} /> Export PNG</button>
+          <button className="icon-button" aria-label="Redo" title="Redo (Ctrl/⌘+Shift+Z)" disabled={!canRedo(project) && !findLatestRedoableAiRevision(project)} onClick={redo}><Redo2 size={18} /></button>
+          <button className="save-button" title={accountConnections.snapshot.syncEnabled && accountConnections.snapshot.billing.cloudAccess === "read_write" ? "Save to cloud" : "Save on this device"} onClick={() => void persist(projectRef.current, true)} disabled={saveState === "saving" || cloudSaveState === "syncing"}><Save size={16} /> Save</button>
+          <button className="ai-button" title={extensionSurface ? "Continue securely in the GlassWare web app" : "Ask GlassWare AI"} onClick={() => extensionSurface ? openHostedEditor("ai") : setAiWidgetOpen(true)}><Sparkles size={17} /> Ask AI</button>
+          <button className="account-button" title={extensionSurface ? "Continue securely in the GlassWare web app" : "Open account"} onClick={() => extensionSurface ? openHostedEditor("account") : accountConnections.snapshot.account ? setActiveTool("Account") : setSignInOpen(true)}><UserRound size={17} /> {accountConnections.snapshot.account?.displayName ?? "Sign in"}</button>
+          <button className="export-button" onClick={() => void openExport("png")}><Download size={17} /> Export</button>
         </div>
       </header>
 
@@ -1733,10 +3492,10 @@ function Editor({
         <Tool icon={<MousePointer2 />} label="Select" active={activeTool === "Select"} onClick={() => setActiveTool("Select")} />
         <Tool icon={<ImagePlus />} label="Images" active={activeTool === "Images"} onClick={() => setActiveTool("Images")} />
         <Tool icon={<Frame />} label="Studio" active={activeTool === "Studio"} onClick={() => setActiveTool("Studio")} />
-        <Tool icon={<PenTool />} label="Annotate" active={activeTool === "Annotate"} onClick={() => setActiveTool("Annotate")} />
         <Tool icon={<Type />} label="Text" active={activeTool === "Text"} onClick={() => setActiveTool("Text")} />
         <Tool icon={<Shapes />} label="Shapes" active={activeTool === "Shapes"} onClick={() => setActiveTool("Shapes")} />
         <Tool icon={<Layers3 />} label="Layers" active={activeTool === "Layers"} onClick={() => setActiveTool("Layers")} />
+        <Tool icon={<LayoutTemplate />} label="Library" active={activeTool === "Library"} onClick={() => setActiveTool("Library")} />
         <Tool icon={<FolderOpen />} label="Files" active={activeTool === "Files"} onClick={() => setActiveTool("Files")} />
         <input ref={fileInput} aria-label="Upload image file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(event) => handleUpload(event.target.files?.[0])} />
         <input ref={replaceImageInput} aria-label="Replace selected image file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(event) => void replaceSelectedImage(event.target.files?.[0])} />
@@ -1749,9 +3508,13 @@ function Editor({
 
       <section
         ref={canvasViewport}
-        className={`canvas-stage ${isDraggingFile ? "drop-active" : ""}`}
+        className={`canvas-stage ${isDraggingFile ? "drop-active" : ""} ${panMode || spacePanActive ? "pan-ready" : ""} ${isPanningCanvas ? "is-panning" : ""}`}
         aria-label="Design canvas"
-        title="Scroll over the canvas to zoom in or out"
+        title="Scroll to zoom. Drag the workspace, middle-drag, or hold Space to pan."
+        onPointerDownCapture={beginCanvasPan}
+        onPointerMove={moveCanvasPan}
+        onPointerUp={endCanvasPan}
+        onPointerCancel={endCanvasPan}
         onDragEnter={(event) => { event.preventDefault(); setIsDraggingFile(true); }}
         onDragOver={(event) => event.preventDefault()}
         onDragLeave={(event) => { if (event.currentTarget === event.target) setIsDraggingFile(false); }}
@@ -1763,24 +3526,67 @@ function Editor({
         }}
       >
         <div className="stage-meta" style={{ width: stageWidth }}>
-          <span>ARTBOARD 01</span>
+          <span>ARTBOARD {String(project.pages.findIndex((page) => page.id === project.activePageId) + 1).padStart(2, "0")} · {project.pages.find((page) => page.id === project.activePageId)?.name}</span>
           <div className="zoom-controls">
+            <button className={panMode ? "active" : ""} aria-pressed={panMode} aria-label="Pan canvas" title="Pan canvas (or hold Space)" onClick={() => setPanMode((current) => !current)}><Hand size={13} /></button>
             <button aria-label="Zoom out" title="Zoom out" onClick={() => void changeZoom(-0.25)} disabled={zoom <= 0.5}><ZoomOut size={13} /></button>
             <button aria-label="Fit artboard" onClick={() => void changeZoom("fit")} title="Fit artboard">{Math.round(viewScale * 100)}%</button>
             <button aria-label="Zoom in" title="Zoom in" onClick={() => void changeZoom(0.25)} disabled={zoom >= 3}><ZoomIn size={13} /></button>
           </div>
         </div>
-        <div className="paper-wrap"><div ref={canvasElement} className="design-canvas" /></div>
+        <div className={`paper-wrap ${project.canvas.showRulers ? "with-rulers" : ""}`}>
+          {project.canvas.showRulers && (
+            <>
+              <span className="ruler-corner" aria-hidden="true" />
+              <div className="canvas-ruler ruler-top" aria-label="Horizontal artboard ruler"><span>0</span><span>{Math.round(project.canvas.width / 2)}</span><span>{project.canvas.width}</span></div>
+              <div className="canvas-ruler ruler-left" aria-label="Vertical artboard ruler"><span>0</span><span>{Math.round(project.canvas.height / 2)}</span><span>{project.canvas.height}</span></div>
+            </>
+          )}
+          <div ref={canvasElement} className="design-canvas" />
+        </div>
         <p className={`local-status status-${saveState}`}>
-          <span /> {saveState === "saving" ? "Saving locally…" : saveState === "error" ? "Local save failed" : "Saved on this device"} · Revision {project.revisions[currentRevisionIndex(project)]?.number ?? 1}
+          <span /> {saveState === "saving"
+            ? "Saving on this device…"
+            : saveState === "error"
+              ? "Device save failed"
+              : cloudSaveState === "syncing"
+                ? "Saved locally · Syncing artwork…"
+                : cloudSaveState === "synced"
+                  ? "Saved to cloud"
+                  : cloudSaveState === "retrying"
+                    ? "Saved locally · Cloud retry pending"
+                    : cloudSaveState === "conflict"
+                      ? "Cloud conflict preserved as a copy"
+                      : "Saved on this device"} · Revision {project.revisions[currentRevisionIndex(project)]?.number ?? 1}
         </p>
         {isDraggingFile && <div className="drop-message"><ImagePlus size={30} />Drop image onto this artboard</div>}
         {message && <button className="toast" onClick={() => setMessage("")}>{message}<small>Click to dismiss</small></button>}
       </section>
 
       <aside className="inspector">
-        <div className="panel-heading"><p>INSPECTOR</p><h2>{selectedObject?.name ?? "Artboard"}</h2></div>
-        {selectedObject ? (
+        <div className="panel-heading"><p>INSPECTOR</p><h2>{selectedIds.length > 1 ? `${selectedIds.length} layers` : selectedObject?.name ?? "Artboard"}</h2></div>
+        {selectedIds.length > 1 ? (
+          <>
+            <div className="multi-selection-card"><Group size={20} /><span><strong>Multi-selection</strong><small>Move, align, distribute, group, duplicate, or delete these layers together.</small></span></div>
+            <div className="multi-align-grid" aria-label="Align selected layers">
+              <button title="Align left" onClick={() => alignSelection("left")}><AlignHorizontalJustifyStart size={16} /></button>
+              <button title="Center horizontally" onClick={() => alignSelection("center")}><AlignCenterHorizontal size={16} /></button>
+              <button title="Align right" onClick={() => alignSelection("right")}><AlignHorizontalJustifyEnd size={16} /></button>
+              <button title="Align top" onClick={() => alignSelection("top")}><AlignVerticalJustifyStart size={16} /></button>
+              <button title="Center vertically" onClick={() => alignSelection("middle")}><AlignCenterVertical size={16} /></button>
+              <button title="Align bottom" onClick={() => alignSelection("bottom")}><AlignVerticalJustifyEnd size={16} /></button>
+              <button title="Distribute horizontally" disabled={selectedIds.length < 3} onClick={() => distributeSelection("horizontal")}><AlignHorizontalSpaceBetween size={16} /></button>
+              <button title="Distribute vertically" disabled={selectedIds.length < 3} onClick={() => distributeSelection("vertical")}><AlignVerticalSpaceBetween size={16} /></button>
+            </div>
+            <label className="inspector-field shape-select"><span>Align to</span><select value={alignmentReference} onChange={(event) => setAlignmentReference(event.target.value as AlignmentReference)}><option value="selection">Selection</option><option value="canvas">Artboard</option></select></label>
+            <div className="property-grid action-grid">
+              <button onClick={groupSelection}><Group size={15} /> Group</button>
+              <button disabled={!selectedObjects.some((object) => object.groupId)} onClick={ungroupSelection}><Ungroup size={15} /> Ungroup</button>
+              <button onClick={duplicateSelected}><Copy size={15} /> Duplicate</button>
+            </div>
+            <button className="delete-button" onClick={deleteSelected}><Trash2 size={15} /> Delete selected layers</button>
+          </>
+        ) : selectedObject ? (
           <>
             <label className="inspector-field"><span>Layer name</span><input key={`${selectedObject.id}-name`} defaultValue={selectedObject.name} onBlur={(event) => updateSelectedName(event.target.value)} /></label>
             {selectedObject.kind === "text" && (
@@ -1801,11 +3607,17 @@ function Editor({
                 </div>
               </>
             )}
-            {selectedObject.kind !== "image" && (
+            {selectedObject.kind !== "image" && !(selectedObject.kind === "shape" && (selectedObject.shape === "blur" || selectedObject.shape === "redact")) && (
               <ColorPicker label="Fill" value={selectedObject.fill} onPreview={previewFill} onCommit={setFill} compact />
             )}
+            {selectedObject.kind === "shape" && selectedObject.shape === "blur" && (
+              <div className="panel-section hint-card"><strong>Live blur region</strong><p>This editable layer resamples and softens every visible layer beneath it. Move or resize it to choose what becomes blurry.</p></div>
+            )}
+            {selectedObject.kind === "shape" && selectedObject.shape === "redact" && (
+              <div className="panel-section hint-card"><strong>Secure opaque cover</strong><p>Redaction stays solid black by design so the covered pixels cannot be recovered from an exported image.</p></div>
+            )}
             {selectedObject.kind === "shape" && (
-              <label className="inspector-field shape-select"><span>Shape</span><select value={selectedObject.shape} onChange={(event) => changeShapeType(event.target.value as ShapeKind)}>{SHAPE_OPTIONS.map((option) => <option key={option.kind} value={option.kind}>{option.label}</option>)}</select></label>
+              <label className="inspector-field shape-select"><span>Shape</span><select value={selectedObject.shape} onChange={(event) => changeShapeType(event.target.value as ShapeKind)}>{INSPECTOR_SHAPE_OPTIONS.map((option) => <option key={option.kind} value={option.kind}>{option.label}</option>)}</select></label>
             )}
             {selectedObject.kind === "image" && (
               <>
@@ -1815,11 +3627,18 @@ function Editor({
                   applyPreset={applyPhotoPreset}
                   updateAdjustments={updateImageAdjustments}
                   applyCrop={applyCropAspect}
+                  openCrop={() => setCropEditorOpen(true)}
+                  openMask={() => setMaskEditorOpen(true)}
+                  openRegionEdit={() => setRegionEditorOpen(true)}
+                  rotate={rotateSelectedImage}
+                  flip={flipSelectedImage}
                   reset={resetPhotoEdits}
                   source={selectedAssetSource}
+                  precisionAvailable={Boolean(selectedAsset)}
                 />
               </>
             )}
+            <label className="inspector-field shape-select"><span>Blend mode <small>Combine with layers below</small></span><select value={selectedObject.blendMode ?? "source-over"} onChange={(event) => setBlendMode(event.target.value as (typeof BLEND_MODES)[number])}>{BLEND_MODES.map((mode) => <option key={mode} value={mode}>{mode === "source-over" ? "Normal" : mode.replaceAll("-", " ")}</option>)}</select></label>
             <label className="property-row"><span>Opacity <small>{Math.round(selectedObject.opacity * 100)}%</small></span><input key={`${selectedObject.id}-opacity`} type="range" min="0" max="100" defaultValue={selectedObject.opacity * 100} onChange={(event) => updateSelectedLive({ opacity: Number(event.target.value) / 100 })} onPointerUp={() => commitCanvas("Opacity changed")} onKeyUp={() => commitCanvas("Opacity changed")} /></label>
             <div className="coordinate-grid">
               <label><span>X</span><input type="number" key={`${selectedObject.id}-x`} defaultValue={Math.round(selectedObject.x)} onBlur={(event) => { updateSelectedLive({ x: Number(event.target.value) }); commitCanvas("Position changed"); }} /></label>
@@ -1838,22 +3657,79 @@ function Editor({
             <div className="artboard-summary"><strong>{project.canvas.width} × {project.canvas.height}</strong><span>{project.canvas.preset} canvas</span><p>Select an object on the artboard or open Layers to edit it precisely.</p></div>
             <div className="panel-section export-formats">
               <span>Export image</span>
-              <button onClick={() => exportImage("image/png")}>PNG <small>lossless</small></button>
-              <button onClick={() => exportImage("image/jpeg")}>JPG <small>compact</small></button>
-              <button onClick={() => exportImage("image/webp")}>WebP <small>modern</small></button>
+              <button onClick={() => void openExport("png")}>PNG <small>lossless</small></button>
+              <button onClick={() => void openExport("jpeg")}>JPG <small>compact</small></button>
+              <button onClick={() => void openExport("webp")}>WebP <small>modern</small></button>
+              <button onClick={() => void openExport("pdf")}>PDF <small>print</small></button>
             </div>
           </>
         )}
         <div className="privacy-stamp"><span>LOCAL BY DEFAULT</span><p>Projects and original image assets are stored in this browser's private database.</p></div>
       </aside>
       <footer className="product-footer">
+        <a href={window.location.protocol === "chrome-extension:" ? "https://labs.wiplash.ai/glassware/" : "./index.html"} title="Back to the GlassWare landing page">GlassWare home</a>
         <a href="https://labs.wiplash.ai/" target="_blank" rel="noreferrer" title="Visit Wiplash Labs">Wiplash Labs</a>
-        <span aria-hidden="true" />
         <a href="https://wiplash.ai/" target="_blank" rel="noreferrer" title="Visit Wiplash.ai">Produced by Wiplash.ai</a>
-        <a href="https://wiplash.ai/legal/privacy" target="_blank" rel="noreferrer" title="Read the Wiplash privacy policy">Privacy</a>
+        <a href="./privacy.html" target="_blank" rel="noreferrer" title="Read the GlassWare privacy policy">Privacy</a>
       </footer>
+      {aiRunActive && <div className="ai-run-editor-lock" aria-hidden="true"><span>Luna is editing · use Cancel in Ask AI to stop safely</span></div>}
+      {aiWidgetOpen && (
+        <Suspense fallback={null}>
+          <AiConnectionsPanel
+            projectId={project.id}
+            projectName={project.name}
+            model={accountConnections}
+            openSettings={() => setAiSettingsOpen(true)}
+            onRunAgent={runAiAgent}
+            onUndoAi={undoAiEdits}
+            onRedoAi={redoAiEdits}
+            canUndoAi={Boolean(findLatestUndoableAiRevision(project))}
+            canRedoAi={Boolean(findLatestRedoableAiRevision(project))}
+            onClose={() => setAiWidgetOpen(false)}
+          />
+        </Suspense>
+      )}
       <SignInModal model={accountConnections} open={signInOpen} onClose={() => setSignInOpen(false)} />
-      <AiSettingsModal model={accountConnections} project={project} open={aiSettingsOpen} onClose={() => setAiSettingsOpen(false)} openAccount={() => setSignInOpen(true)} />
+      {aiSettingsOpen && <Suspense fallback={null}><AiSettingsModal model={accountConnections} project={project} open onClose={() => setAiSettingsOpen(false)} openAccount={() => setSignInOpen(true)} /></Suspense>}
+      {cropEditorOpen && selectedObject?.kind === "image" && selectedAsset && (
+        <CropEditor
+          asset={selectedAsset}
+          crop={selectedObject.crop}
+          onApply={applyPreciseCrop}
+          onClose={() => setCropEditorOpen(false)}
+        />
+      )}
+      {maskEditorOpen && selectedObject?.kind === "image" && selectedAsset && (
+        <ImageMaskEditor
+          asset={selectedAsset}
+          crop={selectedObject.crop}
+          image={selectedObject}
+          onApply={applyImageMask}
+          onClose={() => setMaskEditorOpen(false)}
+        />
+      )}
+      {regionEditorOpen && selectedObject?.kind === "image" && selectedAsset && (
+        <Suspense fallback={null}>
+          <RegionEditModal
+            asset={selectedAsset}
+            crop={selectedObject.crop}
+            image={selectedObject}
+            connectionLabel={accountConnections.snapshot.connections.find((connection) => connection.status === "connected")?.label ?? null}
+            onConnect={() => setAiSettingsOpen(true)}
+            onRun={runRegionEdit}
+            onClose={() => setRegionEditorOpen(false)}
+          />
+        </Suspense>
+      )}
+      {exportOpen && (
+        <ExportModal
+          project={project}
+          assets={exportAssets}
+          initialFormat={exportFormat}
+          onExport={performExport}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
     </main>
   );
 }
@@ -2140,20 +4016,306 @@ function ImagePanel({
   );
 }
 
+function useAssetUrl(asset: StoredAsset): string {
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    const next = URL.createObjectURL(asset.blob);
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [asset]);
+  return url;
+}
+
+function ExportModal({
+  project,
+  assets,
+  initialFormat,
+  onExport,
+  onClose,
+}: {
+  project: GlassWareProject;
+  assets: ReadonlyMap<string, ExportAssetDetail>;
+  initialFormat: ExportFormat;
+  onExport: (settings: ExportSettings) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [format, setFormat] = useState<ExportFormat>(initialFormat);
+  const [width, setWidth] = useState(project.canvas.width);
+  const [quality, setQuality] = useState(0.92);
+  const [transparent, setTransparent] = useState(false);
+  const [dpi, setDpi] = useState(300);
+  const [allPages, setAllPages] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState("");
+  const height = Math.max(1, Math.round(width * project.canvas.height / project.canvas.width));
+  const settings: ExportSettings = { format, width, height, quality, transparent, dpi, allPages: format === "pdf" && allPages };
+  const warnings = assessExport(project, settings, assets);
+  const supportsTransparency = ["png", "webp", "svg"].includes(format);
+
+  async function submit() {
+    setExporting(true);
+    setError("");
+    try {
+      await onExport(settings);
+      onClose();
+    } catch (cause) {
+      console.error(cause);
+      setError(cause instanceof Error ? cause.message : "The export could not be created.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop precision-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !exporting && onClose()}>
+      <section className="export-modal" role="dialog" aria-modal="true" aria-labelledby="export-title">
+        <header><span><Download size={18} /> Export artwork</span><button disabled={exporting} title="Close export settings" aria-label="Close export settings" onClick={onClose}>×</button></header>
+        <div className="export-modal-copy"><p>OUTPUT SETTINGS</p><h2 id="export-title">Ready for screen or print</h2><span>GlassWare checks dimensions, clipping, image detail, and format limits before downloading.</span></div>
+        <div className="export-format-tabs" role="tablist" aria-label="Export format">
+          {(["png", "jpeg", "webp", "svg", "pdf"] as ExportFormat[]).map((value) => (
+            <button role="tab" aria-selected={format === value} className={format === value ? "active" : ""} key={value} onClick={() => setFormat(value)}>{value === "jpeg" ? "JPG" : value.toUpperCase()}</button>
+          ))}
+        </div>
+        <div className="export-modal-body">
+          <section className="export-settings-card">
+            <h3>Dimensions</h3>
+            <div className="export-size-row">
+              <label><span>Width</span><input aria-label="Export width" type="number" min="64" max="16384" value={width} onChange={(event) => setWidth(Math.min(16384, Math.max(64, Number(event.target.value) || 64)))} /><small>px</small></label>
+              <span>×</span>
+              <label><span>Height</span><input aria-label="Export height" value={height} readOnly /><small>px</small></label>
+            </div>
+            <div className="export-scale-buttons" aria-label="Export size presets">
+              {[0.5, 1, 2, 4].map((scale) => <button className={width === Math.round(project.canvas.width * scale) ? "active" : ""} key={scale} onClick={() => setWidth(Math.round(project.canvas.width * scale))}>{scale}×</button>)}
+            </div>
+            {format === "pdf" && (
+              <><label className="export-select"><span>Print density</span><select value={dpi} onChange={(event) => setDpi(Number(event.target.value))}><option value="72">72 DPI · screen</option><option value="150">150 DPI · proof</option><option value="300">300 DPI · print</option></select><small>{(width / dpi).toFixed(2)} × {(height / dpi).toFixed(2)} inches</small></label>{project.pages.length > 1 && <label className="export-checkbox"><input type="checkbox" checked={allPages} onChange={(event) => setAllPages(event.target.checked)} /><span><strong>Export every page</strong><small>Create one PDF with {project.pages.length} pages in project order</small></span></label>}</>
+            )}
+            {format !== "pdf" && format !== "svg" && (
+              <label className="export-quality"><span>Quality <small>{Math.round(quality * 100)}%</small></span><input type="range" min="0.4" max="1" step="0.01" value={quality} onChange={(event) => setQuality(Number(event.target.value))} disabled={format === "png"} /></label>
+            )}
+            <label className="export-checkbox"><input type="checkbox" checked={transparent} disabled={!supportsTransparency} onChange={(event) => setTransparent(event.target.checked)} /><span><strong>Transparent background</strong><small>{supportsTransparency ? "Hide the artboard and Studio backdrop" : "Not available in this format"}</small></span></label>
+          </section>
+          <section className="export-qa-card" aria-live="polite">
+            <header><span>Preflight</span><strong className={warnings.length ? "warning" : "ready"}>{warnings.length ? `${warnings.length} notice${warnings.length === 1 ? "" : "s"}` : "Ready"}</strong></header>
+            {!warnings.length && <div className="export-ready"><span>✓</span><p><strong>No export issues found</strong><small>The output dimensions and visible layers passed the current checks.</small></p></div>}
+            {warnings.map((warning, index) => <div className="export-warning" key={`${warning.code}-${index}`}><span>!</span><p><strong>{warning.code.replaceAll("-", " ")}</strong><small>{warning.message}</small></p></div>)}
+          </section>
+        </div>
+        {error && <button className="export-error" onClick={() => setError("")}>{error}</button>}
+        <footer><span>{format === "pdf" ? `${allPages ? project.pages.length : 1}-page PDF` : `${width.toLocaleString()} × ${height.toLocaleString()} px`} · {project.name}</span><button className="secondary" disabled={exporting} onClick={onClose}>Cancel</button><button disabled={exporting} onClick={() => void submit()}>{exporting ? <><LoaderCircle className="spin" size={14} /> Exporting…</> : <><Download size={14} /> Download {format === "jpeg" ? "JPG" : format.toUpperCase()}</>}</button></footer>
+      </section>
+    </div>
+  );
+}
+
+function CropEditor({
+  asset,
+  crop,
+  onApply,
+  onClose,
+}: {
+  asset: StoredAsset;
+  crop: NormalizedCrop;
+  onApply: (crop: NormalizedCrop) => void;
+  onClose: () => void;
+}) {
+  const imageUrl = useAssetUrl(asset);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    mode: "move" | "resize";
+    handle?: CropHandle;
+    startX: number;
+    startY: number;
+    origin: NormalizedCrop;
+  } | null>(null);
+  const [draft, setDraft] = useState({ ...crop });
+
+  function beginDrag(event: ReactPointerEvent<HTMLElement>, mode: "move" | "resize", handle?: CropHandle) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { pointerId: event.pointerId, mode, handle, startX: event.clientX, startY: event.clientY, origin: draft };
+  }
+
+  function moveDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    const bounds = surfaceRef.current?.getBoundingClientRect();
+    if (!drag || drag.pointerId !== event.pointerId || !bounds) return;
+    const deltaX = (event.clientX - drag.startX) / bounds.width;
+    const deltaY = (event.clientY - drag.startY) / bounds.height;
+    setDraft(drag.mode === "move"
+      ? moveCrop(drag.origin, deltaX, deltaY)
+      : resizeCrop(drag.origin, drag.handle ?? "se", deltaX, deltaY));
+  }
+
+  return (
+    <div className="modal-backdrop precision-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="precision-editor-modal" role="dialog" aria-modal="true" aria-labelledby="crop-editor-title">
+        <header><span><Crop size={18} /> Precision crop</span><button title="Close crop editor" aria-label="Close crop editor" onClick={onClose}>×</button></header>
+        <div className="precision-editor-copy"><h2 id="crop-editor-title">Choose exactly what stays visible</h2><p>Drag the crop or its corner handles. The original image remains untouched.</p></div>
+        <div
+          className="crop-editor-surface"
+          ref={surfaceRef}
+          style={{ aspectRatio: `${asset.width} / ${asset.height}` }}
+          onPointerMove={moveDrag}
+          onPointerUp={() => { dragRef.current = null; }}
+          onPointerCancel={() => { dragRef.current = null; }}
+        >
+          {imageUrl && <img src={imageUrl} alt="Crop preview" draggable={false} />}
+          <div
+            className="crop-selection"
+            style={{ left: `${draft.x * 100}%`, top: `${draft.y * 100}%`, width: `${draft.width * 100}%`, height: `${draft.height * 100}%` }}
+            onPointerDown={(event) => beginDrag(event, "move")}
+          >
+            {(["nw", "ne", "sw", "se"] as CropHandle[]).map((handle) => (
+              <button key={handle} className={`crop-handle crop-handle-${handle}`} aria-label={`Resize crop from ${handle}`} onPointerDown={(event) => beginDrag(event, "resize", handle)} />
+            ))}
+          </div>
+        </div>
+        <footer><span>{Math.round(draft.width * asset.width)} × {Math.round(draft.height * asset.height)} source pixels</span><button className="secondary" onClick={onClose}>Cancel</button><button onClick={() => onApply(draft)}>Apply crop</button></footer>
+      </section>
+    </div>
+  );
+}
+
+function ImageMaskEditor({
+  asset,
+  crop,
+  image,
+  onApply,
+  onClose,
+}: {
+  asset: StoredAsset;
+  crop: NormalizedCrop;
+  image: ImageDesignNode;
+  onApply: (mask: ImageMask) => void;
+  onClose: () => void;
+}) {
+  const imageUrl = useAssetUrl(asset);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const strokeRef = useRef<{ pointerId: number; id: string } | null>(null);
+  const [mode, setMode] = useState<"hide" | "reveal">("hide");
+  const [size, setSize] = useState(0.08);
+  const [draft, setDraft] = useState(() => cloneImageMask(image.mask));
+
+  function point(event: ReactPointerEvent<HTMLDivElement>): [number, number] | null {
+    const bounds = surfaceRef.current?.getBoundingClientRect();
+    if (!bounds) return null;
+    return [
+      Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width)),
+      Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height)),
+    ];
+  }
+
+  function beginStroke(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    const nextPoint = point(event);
+    if (!nextPoint) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const id = newId();
+    strokeRef.current = { pointerId: event.pointerId, id };
+    setDraft((current) => ({
+      ...current,
+      enabled: true,
+      strokes: [...current.strokes, { id, mode, size, points: [...nextPoint, ...nextPoint] }],
+    }));
+  }
+
+  function continueStroke(event: ReactPointerEvent<HTMLDivElement>) {
+    const active = strokeRef.current;
+    const nextPoint = point(event);
+    if (!active || active.pointerId !== event.pointerId || !nextPoint) return;
+    setDraft((current) => ({
+      ...current,
+      strokes: current.strokes.map((stroke) => stroke.id === active.id
+        ? { ...stroke, points: [...stroke.points, ...nextPoint].slice(-4000) }
+        : stroke),
+    }));
+  }
+
+  const imageStyle = {
+    width: `${100 / crop.width}%`,
+    height: `${100 / crop.height}%`,
+    left: `${-crop.x / crop.width * 100}%`,
+    top: `${-crop.y / crop.height * 100}%`,
+  };
+
+  return (
+    <div className="modal-backdrop precision-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="precision-editor-modal mask-editor-modal" role="dialog" aria-modal="true" aria-labelledby="mask-editor-title">
+        <header><span><Paintbrush size={18} /> Image mask</span><button title="Close mask editor" aria-label="Close mask editor" onClick={onClose}>×</button></header>
+        <div className="precision-editor-copy"><h2 id="mask-editor-title">Hide distractions. Restore details.</h2><p>Brush edits are non-destructive and can be changed or cleared later.</p></div>
+        <div className="mask-editor-toolbar">
+          <div role="group" aria-label="Mask brush mode">
+            <button className={mode === "hide" ? "active" : ""} aria-pressed={mode === "hide"} onClick={() => setMode("hide")} title="Hide pixels"><Eraser size={15} /> Hide</button>
+            <button className={mode === "reveal" ? "active" : ""} aria-pressed={mode === "reveal"} onClick={() => setMode("reveal")} title="Restore hidden pixels"><Paintbrush size={15} /> Restore</button>
+          </div>
+          <label><span>Brush <small>{Math.round(size * 100)}%</small></span><input aria-label="Mask brush size" type="range" min="0.01" max="0.3" step="0.01" value={size} onChange={(event) => setSize(Number(event.target.value))} /></label>
+          <label><span>Feather <small>{Math.round(draft.feather)} px</small></span><input aria-label="Mask feather" type="range" min="0" max="100" step="1" value={draft.feather} onChange={(event) => setDraft((current) => ({ ...current, feather: Number(event.target.value) }))} /></label>
+          <button className={draft.inverted ? "active" : ""} aria-pressed={draft.inverted} onClick={() => setDraft((current) => ({ ...current, inverted: !current.inverted }))} title="Invert which parts of the mask are visible">Invert</button>
+        </div>
+        <div
+          className="mask-editor-surface"
+          ref={surfaceRef}
+          style={{ aspectRatio: `${Math.abs(image.width * image.scaleX)} / ${Math.abs(image.height * image.scaleY)}` }}
+          onPointerDown={beginStroke}
+          onPointerMove={continueStroke}
+          onPointerUp={() => { strokeRef.current = null; }}
+          onPointerCancel={() => { strokeRef.current = null; }}
+        >
+          {imageUrl && <img src={imageUrl} alt="Mask preview" draggable={false} style={imageStyle} />}
+          <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+            {draft.strokes.map((stroke) => {
+              const points = stroke.points;
+              const path = points.reduce((value, coordinate, index) => index % 2 === 0
+                ? `${value}${index === 0 ? "M" : " L"}${coordinate * 1000}`
+                : `${value} ${coordinate * 1000}`, "");
+              return <path key={stroke.id} d={path} className={`mask-stroke ${stroke.mode}`} strokeWidth={stroke.size * 1000} />;
+            })}
+          </svg>
+          {!draft.strokes.length && <span className="mask-empty-hint">Drag over the image to begin masking</span>}
+        </div>
+        <footer>
+          <button className="secondary" disabled={!draft.strokes.length} onClick={() => setDraft((current) => ({ ...current, strokes: current.strokes.slice(0, -1) }))}>Undo stroke</button>
+          <button className="secondary" disabled={!draft.strokes.length} onClick={() => setDraft({ ...DEFAULT_IMAGE_MASK, strokes: [] })}>Clear mask</button>
+          <span />
+          <button className="secondary" onClick={onClose}>Cancel</button>
+          <button onClick={() => onApply({ ...draft, enabled: draft.strokes.length > 0 })}>Apply mask</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 function PhotoInspector({
   image,
   applyPreset,
   updateAdjustments,
   applyCrop,
+  openCrop,
+  openMask,
+  openRegionEdit,
+  rotate,
+  flip,
   reset,
   source,
+  precisionAvailable,
 }: {
   image: ImageDesignNode;
   applyPreset: (preset: PhotoPreset) => void;
   updateAdjustments: (patch: Partial<ImageAdjustments>, summary: string, commit?: boolean) => void;
   applyCrop: (aspect: number | null, label: string) => void;
+  openCrop: () => void;
+  openMask: () => void;
+  openRegionEdit: () => void;
+  rotate: (direction: -1 | 1) => void;
+  flip: (axis: "horizontal" | "vertical") => void;
   reset: () => void;
   source: AssetSource | null;
+  precisionAvailable: boolean;
 }) {
   return (
     <div className="photo-inspector">
@@ -2165,6 +4327,10 @@ function PhotoInspector({
       <AdjustmentSlider label="Brightness" value={image.adjustments.brightness} min={-1} max={1} step={0.05} display={Math.round(image.adjustments.brightness * 100)} onChange={(value, commit) => updateAdjustments({ brightness: value }, "Brightness changed", commit)} />
       <AdjustmentSlider label="Contrast" value={image.adjustments.contrast} min={-100} max={100} step={1} display={Math.round(image.adjustments.contrast)} onChange={(value, commit) => updateAdjustments({ contrast: value }, "Contrast changed", commit)} />
       <AdjustmentSlider label="Saturation" value={image.adjustments.saturation} min={-2} max={2} step={0.05} display={Math.round(image.adjustments.saturation * 100)} onChange={(value, commit) => updateAdjustments({ saturation: value }, "Saturation changed", commit)} />
+      <AdjustmentSlider label="Temperature" value={image.adjustments.temperature} min={-1} max={1} step={0.05} display={Math.round(image.adjustments.temperature * 100)} onChange={(value, commit) => updateAdjustments({ temperature: value }, "Temperature changed", commit)} />
+      <AdjustmentSlider label="Tint" value={image.adjustments.tint} min={-1} max={1} step={0.05} display={Math.round(image.adjustments.tint * 100)} onChange={(value, commit) => updateAdjustments({ tint: value }, "Tint changed", commit)} />
+      <AdjustmentSlider label="Sharpen" value={image.adjustments.sharpen} min={0} max={1} step={0.05} display={Math.round(image.adjustments.sharpen * 100)} onChange={(value, commit) => updateAdjustments({ sharpen: value }, "Sharpen changed", commit)} />
+      <AdjustmentSlider label="Vignette" value={image.adjustments.vignette} min={0} max={1} step={0.05} display={Math.round(image.adjustments.vignette * 100)} onChange={(value, commit) => updateAdjustments({ vignette: value }, "Vignette changed", commit)} />
       <AdjustmentSlider label="Blur" value={image.adjustments.blur} min={0} max={20} step={0.5} display={image.adjustments.blur} onChange={(value, commit) => updateAdjustments({ blur: value }, "Blur changed", commit)} />
       <div className="effect-toggles">
         <button className={image.adjustments.grayscale ? "active" : ""} onClick={() => updateAdjustments({ grayscale: !image.adjustments.grayscale }, "Grayscale toggled")}>B&amp;W</button>
@@ -2177,12 +4343,30 @@ function PhotoInspector({
         <button onClick={() => applyCrop(4 / 5, "portrait")}>4:5</button>
         <button onClick={() => applyCrop(16 / 9, "widescreen")}>16:9</button>
       </div>
+      <button className="precision-edit-button" disabled={!precisionAvailable} onClick={openCrop} title="Move and resize the crop area precisely"><Crop size={15} /> Edit crop</button>
+      <div className="inspector-section-title"><span>Transform</span><small>Keep visual center</small></div>
+      <div className="image-transform-buttons">
+        <button title="Rotate 90 degrees counterclockwise" aria-label="Rotate image counterclockwise" onClick={() => rotate(-1)}><RotateCcw size={15} /></button>
+        <button title="Rotate 90 degrees clockwise" aria-label="Rotate image clockwise" onClick={() => rotate(1)}><RotateCw size={15} /></button>
+        <button title="Flip image horizontally" aria-label="Flip image horizontally" onClick={() => flip("horizontal")}><FlipHorizontal2 size={16} /></button>
+        <button title="Flip image vertically" aria-label="Flip image vertically" onClick={() => flip("vertical")}><FlipVertical2 size={16} /></button>
+      </div>
+      <div className="inspector-section-title"><span>Mask</span><small>{image.mask.strokes.length ? `${image.mask.strokes.length} strokes` : "Non-destructive"}</small></div>
+      <button className="precision-edit-button" disabled={!precisionAvailable} onClick={openMask} title="Hide or restore parts of this image with brushes"><Paintbrush size={15} /> Edit image mask</button>
+      <div className="inspector-section-title"><span>Generative edit</span><small>Region-aware</small></div>
+      <button className="precision-edit-button ai-region-button" disabled={!precisionAvailable} onClick={openRegionEdit} title="Paint a region and ask your connected AI to edit only those pixels"><Sparkles size={15} /> AI region edit</button>
       <button className="reset-edits" onClick={reset}><RotateCcw size={14} /> Reset photo edits</button>
-      {source && (
+      {source?.provider === "openverse" && (
         <div className="asset-source-receipt">
           <span>IMAGE SOURCE · {source.license}</span>
           <p>{source.attribution}</p>
           <a href={source.sourceUrl} target="_blank" rel="noreferrer">Verify source <ExternalLink size={11} /></a>
+        </div>
+      )}
+      {source?.provider === "glassware-ai-edit" && (
+        <div className="asset-source-receipt ai-edit-receipt">
+          <span>AI REGION EDIT · {source.model}</span>
+          <p>Derived from asset {source.parentAssetId.slice(0, 8)} with {source.connectionKind === "openai_api" ? "OpenAI API" : "ChatGPT / Codex"}. The edit prompt is not stored in the asset receipt.</p>
         </div>
       )}
     </div>

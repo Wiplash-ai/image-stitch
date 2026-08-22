@@ -1,0 +1,29 @@
+name: Verify GlassWare
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: glassware-${{ github.sha }}-chromium
+          path: artifacts/store/chromium/
+          if-no-files-found: error

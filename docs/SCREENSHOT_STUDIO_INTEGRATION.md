@@ -38,9 +38,12 @@ The Studio panel exposes explicit **Selected image** and **Whole artwork**
 targets. Both receive combined Clean, Float, Outline, and Photo looks followed
 by precise corner, frame, and shadow controls. Whole artwork also adds outer
 spacing and rich backdrops while keeping the original design nodes editable.
-The separate Annotate tool keeps screenshot markup discoverable without mixing
-it into ordinary Shapes. Every committed change creates a named revision and
-is included in portable project bundles and full-resolution exports.
+The **Shapes & markup** panel keeps screenshot callouts and privacy tools beside
+ordinary geometry without duplicating the same controls in a second tool. Blur
+regions sample and soften the visible layers beneath them; opaque redaction is
+the secure choice for private content. Every committed change creates a named
+revision and is included in portable project bundles and full-resolution
+exports.
 
 ## Deliberately deferred
 

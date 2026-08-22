@@ -11,6 +11,11 @@ import {
   SHAPE_KINDS,
   cloneImagePresentation,
   cloneArtworkPresentation,
+  DEFAULT_IMAGE_ADJUSTMENTS,
+  activatePage,
+  addProjectPage,
+  deleteProjectPage,
+  reorderProjectPage,
 } from "../src/lib/model";
 
 describe("GlassWare project model", () => {
@@ -95,8 +100,9 @@ describe("GlassWare project model", () => {
     expect(recovered?.objects[0]).toMatchObject({
       kind: "image",
       crop: { x: 0, y: 0, width: 1, height: 1 },
-      adjustments: { brightness: 0, contrast: 0, saturation: 0, blur: 0, grayscale: false, sepia: false },
+      adjustments: { ...DEFAULT_IMAGE_ADJUSTMENTS },
       presentation: cloneImagePresentation(),
+      mask: { enabled: false, inverted: false, feather: 0, strokes: [] },
     });
   });
 
@@ -107,8 +113,9 @@ describe("GlassWare project model", () => {
       x: 0, y: 0, width: 800, height: 500, rotation: 0, scaleX: 1, scaleY: 1,
       opacity: 1, visible: true, locked: false,
       crop: { x: 0, y: 0, width: 1, height: 1 },
-      adjustments: { brightness: 0, contrast: 0, saturation: 0, blur: 0, grayscale: false, sepia: false },
+      adjustments: { ...DEFAULT_IMAGE_ADJUSTMENTS },
       presentation: cloneImagePresentation(),
+      mask: { enabled: false, inverted: false, feather: 0, strokes: [] },
     };
     const added = commitSnapshot(project, "Image added", { canvas: project.canvas, objects: [image] });
     const styled = commitSnapshot(added, "Soft shadow", {
@@ -205,5 +212,33 @@ describe("GlassWare project model", () => {
       };
       expect(normalizeProject(candidate)?.objects.find((object) => object.kind === "shape")).toMatchObject({ shape });
     }
+  });
+
+  it("keeps page canvases, layers, and undo positions independent", () => {
+    const original = createProject("Pages", false);
+    const firstPageId = original.activePageId;
+    const firstEdited = commitSnapshot(original, "First page color", {
+      canvas: { ...original.canvas, background: "#ff0000" }, objects: original.objects,
+    });
+    const second = addProjectPage(firstEdited);
+    const secondEdited = commitSnapshot(second, "Second page color", {
+      canvas: { ...second.canvas, background: "#0000ff" }, objects: second.objects,
+    });
+    expect(undoProject(secondEdited).canvas.background).toBe("#ff0000");
+    const firstAgain = activatePage(secondEdited, firstPageId);
+    expect(firstAgain.canvas.background).toBe("#ff0000");
+    expect(firstAgain.currentRevisionId).toBe(firstEdited.currentRevisionId);
+  });
+
+  it("duplicates, reorders, and deletes pages without reusing layer ids", () => {
+    const project = createProject("Page commands");
+    const duplicate = addProjectPage(project, true);
+    expect(duplicate.pages).toHaveLength(2);
+    expect(duplicate.pages[1].objects.map((object) => object.id)).not.toEqual(duplicate.pages[0].objects.map((object) => object.id));
+    const reordered = reorderProjectPage(duplicate, duplicate.activePageId, -1);
+    expect(reordered.pages[0].id).toBe(duplicate.activePageId);
+    const deleted = deleteProjectPage(reordered, reordered.activePageId);
+    expect(deleted.pages).toHaveLength(1);
+    expect(deleted.activePageId).toBe(project.activePageId);
   });
 });

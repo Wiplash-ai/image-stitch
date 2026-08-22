@@ -1,18 +1,31 @@
 {
   "manifest_version": 3,
   "name": "GlassWare",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "description": "Capture images and pages into a private, local-first creative workbench.",
   "homepage_url": "https://labs.wiplash.ai/glassware",
-  "permissions": ["activeTab", "contextMenus", "storage", "tabs"],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": ["activeTab", "contextMenus", "storage"],
   "host_permissions": [
     "https://api.openverse.org/*",
     "https://fonts.googleapis.com/*",
     "https://fonts.gstatic.com/*"
   ],
   "background": { "service_worker": "background.js" },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
   "action": {
     "default_title": "Capture with GlassWare",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    },
     "default_popup": "popup.html"
   }
 }

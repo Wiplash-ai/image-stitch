@@ -25,18 +25,34 @@
           "height": { "type": "integer", "minimum": 1, "maximum": 32768 },
           "createdAt": { "type": "string", "format": "date-time" },
           "source": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["provider", "sourceUrl", "license", "attribution"],
-            "properties": {
-              "provider": { "const": "openverse" },
-              "sourceUrl": { "type": "string", "format": "uri" },
-              "creator": { "type": "string", "maxLength": 500 },
-              "creatorUrl": { "type": "string", "format": "uri" },
-              "license": { "type": "string", "minLength": 1, "maxLength": 80 },
-              "licenseUrl": { "type": "string", "format": "uri" },
-              "attribution": { "type": "string", "minLength": 1, "maxLength": 2000 }
-            }
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["provider", "sourceUrl", "license", "attribution"],
+                "properties": {
+                  "provider": { "const": "openverse" },
+                  "sourceUrl": { "type": "string", "format": "uri" },
+                  "creator": { "type": "string", "maxLength": 500 },
+                  "creatorUrl": { "type": "string", "format": "uri" },
+                  "license": { "type": "string", "minLength": 1, "maxLength": 80 },
+                  "licenseUrl": { "type": "string", "format": "uri" },
+                  "attribution": { "type": "string", "minLength": 1, "maxLength": 2000 }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["provider", "connectionKind", "model", "parentAssetId", "createdAt"],
+                "properties": {
+                  "provider": { "const": "glassware-ai-edit" },
+                  "connectionKind": { "enum": ["chatgpt_codex_plugin", "openai_api"] },
+                  "model": { "type": "string", "minLength": 1, "maxLength": 120 },
+                  "parentAssetId": { "type": "string", "format": "uuid" },
+                  "createdAt": { "type": "string", "format": "date-time" }
+                }
+              }
+            ]
           },
           "dataUrl": { "type": "string", "pattern": "^data:image/(png|jpeg|webp|gif);base64," }
         }
@@ -73,6 +89,22 @@
               }
             }
           }
+        }
+      }
+    },
+    "components": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "projectId", "name", "objects", "createdAt"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "projectId": { "type": "string", "format": "uuid" },
+          "name": { "type": "string", "minLength": 1, "maxLength": 240 },
+          "objects": { "type": "array", "minItems": 1, "items": { "$ref": "project.v1.schema.json#/$defs/designNode" } },
+          "createdAt": { "type": "string", "format": "date-time" }
         }
       }
     }

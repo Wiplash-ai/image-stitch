@@ -1,5 +1,7 @@
 import {
   CANVAS_PRESETS,
+  DEFAULT_IMAGE_ADJUSTMENTS,
+  cloneImageMask,
   cloneImagePresentation,
   commitSnapshot,
   createProject,
@@ -23,8 +25,9 @@ export function createStudioPlaygroundProject(
       name: "Studio dashboard screenshot",
       assetId,
       crop: { x: 0, y: 0, width: 1, height: 1 },
-      adjustments: { brightness: 0, contrast: 0, saturation: 0, blur: 0, grayscale: false, sepia: false },
+      adjustments: { ...DEFAULT_IMAGE_ADJUSTMENTS },
       presentation: cloneImagePresentation(),
+      mask: cloneImageMask(),
       x: 110,
       y: 255,
       width: 860,

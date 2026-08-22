@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="560" viewBox="0 0 1400 560" role="img" aria-labelledby="title desc">
+  <title id="title">GlassWare</title>
+  <desc id="desc">GlassWare captures browser pages into an editable local-first artboard.</desc>
+  <rect width="1400" height="560" fill="#f7f7f5"/>
+  <path d="M0 56h1400M0 504h1400" stroke="#d7d7d2" stroke-width="2"/>
+  <g transform="translate(112 144) scale(2.1)">
+    <rect width="128" height="128" rx="26" fill="#111"/>
+    <clipPath id="glass"><rect x="23" y="23" width="82" height="82" rx="10"/></clipPath>
+    <g clip-path="url(#glass)" stroke="#111" stroke-width="5" stroke-linejoin="round">
+      <path d="M20 20h43L53 53 20 66z" fill="#ff4b4b"/><path d="M63 20h45v29L76 58 53 53z" fill="#ff9f1c"/>
+      <path d="M108 49v31L76 73V58z" fill="#ffe83b"/><path d="M20 66l33-13 23 20-14 34H20z" fill="#2fca75"/>
+      <path d="M76 73l32 7v27H62z" fill="#2ca8ff"/><path d="M20 107h42l-16 24H20z" fill="#7c5cff"/><path d="M62 107h46v24H46z" fill="#ef4fa6"/>
+    </g>
+    <rect x="23" y="23" width="82" height="82" rx="10" fill="none" stroke="#fff" stroke-width="4"/>
+  </g>
+  <g fill="#111">
+    <text x="488" y="230" font-family="Arial, Helvetica, sans-serif" font-size="98" font-weight="800" letter-spacing="-5">GlassWare</text>
+    <text x="494" y="284" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" letter-spacing="5.4">CAPTURE · EDIT · CREATE</text>
+    <path d="M494 320h750" stroke="#111" stroke-width="2"/>
+    <text x="494" y="368" font-family="Arial, Helvetica, sans-serif" font-size="30">The local-first image editor that works with your AI.</text>
+  </g>
+</svg>

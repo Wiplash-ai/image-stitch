@@ -3,7 +3,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import projectSchema from "../public/schemas/project.v1.schema.json";
 import bundleSchema from "../public/schemas/bundle.v1.schema.json";
-import { cloneImagePresentation, createProject, SHAPE_KINDS } from "../src/lib/model";
+import { DEFAULT_IMAGE_ADJUSTMENTS, cloneImageMask, cloneImagePresentation, createProject, SHAPE_KINDS } from "../src/lib/model";
 
 function validator() {
   const ajv = new Ajv2020({ allErrors: true });
@@ -50,12 +50,18 @@ describe("public JSON schemas", () => {
       x: 10, y: 20, width: 400, height: 400, rotation: 0, scaleX: 1, scaleY: 1,
       opacity: 1, visible: true, locked: false,
       crop: { x: 0.2, y: 0, width: 0.6, height: 1 },
-      adjustments: { brightness: 0.1, contrast: 12, saturation: 0.2, blur: 0, grayscale: false, sepia: false },
+      adjustments: { ...DEFAULT_IMAGE_ADJUSTMENTS, brightness: 0.1, contrast: 12, saturation: 0.2 },
       presentation: {
         ...cloneImagePresentation(),
         cornerRadius: 20,
         frame: { type: "border-dark", width: 2, color: "#111111", opacity: 1, padding: 0, title: "" },
         shadow: { enabled: true, color: "#111111", blur: 48, offsetX: 0, offsetY: 12, opacity: 0.28 },
+      },
+      mask: {
+        ...cloneImageMask(),
+        enabled: true,
+        feather: 6,
+        strokes: [{ id: crypto.randomUUID(), mode: "hide", size: 0.08, points: [0.1, 0.1, 0.4, 0.4] }],
       },
     });
     const validate = validator().getSchema(projectSchema.$id)!;
@@ -72,6 +78,16 @@ describe("public JSON schemas", () => {
     }
   });
 
+  it("accepts editable text and shape shadows", () => {
+    const project = createProject("Layer shadows");
+    project.objects = project.objects.map((object) => object.kind === "image" ? object : {
+      ...object,
+      shadow: { enabled: true, color: "#111111", blur: 32, offsetX: 0, offsetY: 10, opacity: 0.24 },
+    });
+    const validate = validator().getSchema(projectSchema.$id)!;
+    expect(validate(project), JSON.stringify(validate.errors)).toBe(true);
+  });
+
   it("accepts searched-image attribution in portable bundles", () => {
     const project = createProject("Attributed image", false);
     const validate = validator().compile(bundleSchema);
@@ -85,6 +101,24 @@ describe("public JSON schemas", () => {
         source: {
           provider: "openverse", sourceUrl: "https://example.com/flower", creator: "Creator",
           license: "BY", licenseUrl: "https://creativecommons.org/licenses/by/4.0/", attribution: "Flower by Creator, CC BY 4.0.",
+        },
+      }],
+    }), JSON.stringify(validate.errors)).toBe(true);
+  });
+
+  it("accepts credential-free AI region-edit provenance in portable bundles", () => {
+    const project = createProject("Region edit", false);
+    const validate = validator().compile(bundleSchema);
+    expect(validate({
+      schemaVersion: "glassware.bundle.v1",
+      exportedAt: new Date().toISOString(),
+      project,
+      assets: [{
+        id: crypto.randomUUID(), projectId: project.id, name: "edited.png", mimeType: "image/png",
+        size: 1, width: 1, height: 1, createdAt: new Date().toISOString(), dataUrl: "data:image/png;base64,AA==",
+        source: {
+          provider: "glassware-ai-edit", connectionKind: "openai_api", model: "gpt-image-2",
+          parentAssetId: crypto.randomUUID(), createdAt: new Date().toISOString(),
         },
       }],
     }), JSON.stringify(validate.errors)).toBe(true);

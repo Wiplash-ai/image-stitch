@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
-import { cloneImagePresentation, createProject } from "../src/lib/model";
-import { readProjectBundle } from "../src/lib/bundle";
+import { DEFAULT_IMAGE_ADJUSTMENTS, cloneImageMask, cloneImagePresentation, createProject } from "../src/lib/model";
+import { readProjectBundle, restoreCloudProjectBundle, type ProjectBundle } from "../src/lib/bundle";
 import { resetStorageForTests } from "../src/lib/storage";
 
 afterEach(async () => {
@@ -18,8 +18,9 @@ describe("portable project bundles", () => {
       name: "Photo",
       assetId,
       crop: { x: 0, y: 0, width: 1, height: 1 },
-      adjustments: { brightness: 0, contrast: 0, saturation: 0, blur: 0, grayscale: false, sepia: false },
+      adjustments: { ...DEFAULT_IMAGE_ADJUSTMENTS },
       presentation: cloneImagePresentation(),
+      mask: cloneImageMask(),
       x: 0,
       y: 0,
       width: 1,
@@ -67,6 +68,32 @@ describe("portable project bundles", () => {
       assets: [],
     }));
     expect(imported.project.schemaVersion).toBe("glassware.project.v1");
+  });
+
+  it("restores cloud projects without remapping stable project or asset ids", async () => {
+    const source = createProject("Synced postcard", false);
+    const assetId = crypto.randomUUID();
+    source.objects.push({
+      id: crypto.randomUUID(), kind: "image", name: "Photo", assetId,
+      crop: { x: 0, y: 0, width: 1, height: 1 },
+      adjustments: { ...DEFAULT_IMAGE_ADJUSTMENTS },
+      presentation: cloneImagePresentation(), x: 0, y: 0, width: 1, height: 1,
+      mask: cloneImageMask(),
+      rotation: 0, scaleX: 1, scaleY: 1, opacity: 1, visible: true, locked: false,
+    });
+    const restored = await restoreCloudProjectBundle({
+      schemaVersion: "glassware.bundle.v1",
+      exportedAt: source.updatedAt,
+      project: source,
+      assets: [{
+        id: assetId, projectId: source.id, name: "pixel.png", mimeType: "image/png", size: 1,
+        width: 1, height: 1, createdAt: source.createdAt, dataUrl: "data:image/png;base64,AA==",
+      }],
+      fonts: [],
+    } satisfies ProjectBundle);
+    expect(restored.project.id).toBe(source.id);
+    expect(restored.project.objects[0]).toMatchObject({ kind: "image", assetId });
+    expect(restored.assets[0]).toMatchObject({ id: assetId, projectId: source.id });
   });
 
   it("restores embedded font files from a portable project", async () => {

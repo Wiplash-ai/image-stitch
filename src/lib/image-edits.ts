@@ -9,10 +9,10 @@ export type PhotoPreset = "original" | "warm" | "punch" | "mono" | "vintage";
 
 export const PHOTO_PRESETS: Record<PhotoPreset, ImageAdjustments> = {
   original: { ...DEFAULT_IMAGE_ADJUSTMENTS },
-  warm: { ...DEFAULT_IMAGE_ADJUSTMENTS, brightness: 0.06, contrast: 8, saturation: 0.2, sepia: true },
-  punch: { ...DEFAULT_IMAGE_ADJUSTMENTS, contrast: 22, saturation: 0.35 },
+  warm: { ...DEFAULT_IMAGE_ADJUSTMENTS, brightness: 0.06, contrast: 8, saturation: 0.2, temperature: 0.32 },
+  punch: { ...DEFAULT_IMAGE_ADJUSTMENTS, contrast: 22, saturation: 0.35, sharpen: 0.18 },
   mono: { ...DEFAULT_IMAGE_ADJUSTMENTS, contrast: 12, grayscale: true },
-  vintage: { ...DEFAULT_IMAGE_ADJUSTMENTS, brightness: 0.03, contrast: -8, saturation: -0.25, sepia: true },
+  vintage: { ...DEFAULT_IMAGE_ADJUSTMENTS, brightness: 0.03, contrast: -8, saturation: -0.25, temperature: 0.18, sepia: true, vignette: 0.24 },
 };
 
 export function centerCropForAspect(sourceWidth: number, sourceHeight: number, targetAspect: number): NormalizedCrop {

@@ -74,8 +74,17 @@ available without changing modes.
 - Auto-save reports a receipt. It never merely flashes an ambiguous spinner.
 - Destructive actions are reversible; irreversible deletion requires explicit
   confirmation and names the affected project or asset.
-- AI never changes the canvas invisibly. Proposals show before/after state,
-  rationale, affected objects, external data scope, and estimated model cost.
+- AI changes are visible step by step, bounded to six rendered observations and
+  three related operations per step, and committed as one named revision with
+  dedicated full-session undo and redo.
+- Ask AI conversations belong to the current project. Closing and reopening
+  restores the latest conversation; History switches conversations and New
+  conversation is the only deliberate blank-context action. Signed-in history
+  is encrypted in the account service, cached per account on the device, and
+  remains individually deletable. Conversations from another project are
+  visible but read-only until that project is opened.
+- Scroll zooms the artboard. The Hand control, Space-drag, middle-drag, and
+  empty-workspace drag pan large artwork without requiring the scrollbars.
 - Reduced-motion mode removes decorative movement without hiding state change.
 
 ## Usability acceptance scenarios
@@ -84,5 +93,5 @@ available without changing modes.
 - Remove distractions, adjust color, crop, and export a print-quality portrait.
 - Capture a browser page, annotate it, blur private details, and copy the result.
 - Resize one approved design into square, story, and landscape variants.
-- Ask ChatGPT/Codex for a layout variant, reject one operation, accept the rest,
-  then return to the previous revision.
+- Ask ChatGPT/Codex for a layout variant, watch it inspect and refine the
+  rendered artwork, then undo the complete AI session in one action.
