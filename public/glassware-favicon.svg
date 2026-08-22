@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title description">
+  <title id="title">GlassWare</title>
+  <desc id="description">A bright, square stained-glass window.</desc>
+  <rect x="14" y="14" width="100" height="100" rx="13" fill="none" stroke="#f7f5f0" stroke-width="9"/>
+  <g stroke="#111111" stroke-width="5" stroke-linejoin="round">
+    <path d="M18 18h42v37L18 70Z" fill="#ef4055"/>
+    <path d="M60 18h50v27L76 59 60 55Z" fill="#f19b2c"/>
+    <path d="M110 45v34l-34-7V59Z" fill="#f0cf36"/>
+    <path d="m18 70 42-15 16 17-17 19H18Z" fill="#35ac6c"/>
+    <path d="m76 72 34 7v31H59V91Z" fill="#29a0da"/>
+    <path d="M18 91h41v19H18Z" fill="#7154d3"/>
+    <path d="M59 91h23v19H59Z" fill="#e94e98"/>
+  </g>
+  <rect x="18" y="18" width="92" height="92" rx="9" fill="none" stroke="#111111" stroke-width="5"/>
+</svg>
