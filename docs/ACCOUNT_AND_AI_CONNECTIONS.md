@@ -7,21 +7,32 @@ project, enable sync, or contact an AI provider. Accounts exist for explicit
 cloud features: optional sync, encrypted AI connections, isolated Codex jobs,
 sharing, and future team controls.
 
-The public client supports two adapters:
+The public client supports three adapters:
 
 - `device` preserves readable legacy browser profiles for migration only. It
   does not create new accounts, claim cloud authentication, enable sync, or
   create pretend AI connections.
 - `service` talks to the optional private account service configured by
   `VITE_GLASSWARE_ACCOUNT_API_URL`.
+- `extension` uses the same service through Chromium's browser-owned identity
+  window and a revocable GlassWare-only bearer session.
 
 Cloud actions remain visibly unavailable without the service. Production
 sign-in starts with one Wiplash.ai action in the GlassWare modal and redirects
 to the shared Wiplash Keycloak realm through a confidential BFF. The realm page
 offers Google, GitHub, and GitLab when no Wiplash session exists and otherwise
-reuses the existing SSO session. GlassWare still receives its own protected
-HTTP-only session cookie; no app cookie or Keycloak token is shared with the
-browser client.
+reuses the existing SSO session. The web editor receives its own protected
+HTTP-only session cookie; no app cookie or Keycloak token is exposed to its
+JavaScript client.
+
+In the packaged extension, sign-in requests optional access only to the account
+service origin. GlassWare creates a state-bound S256 PKCE request, opens the
+Wiplash authorization URL with `chrome.identity.launchWebAuthFlow`, validates
+the exact browser callback, and exchanges the one-time code. The extension
+stores only the returned `gw_account_…` app session and its expiry. The server
+stores its account record encrypted under a token hash for up to 30 days and
+revokes it at sign-out. Keycloak and social-provider tokens never enter the
+extension.
 
 ## Connection lanes
 
@@ -232,7 +243,8 @@ receipt.
 
 ## Required private-service controls
 
-- External-identity-only login with secure session cookies.
+- External-identity-only login with secure web cookies or an exact-origin,
+  PKCE-bound, revocable extension app session.
 - Exact-origin CORS, CSRF enforcement, rate limits, and abuse controls.
 - Tenant- and project-scoped authorization grants.
 - Authenticated private-runner calls with an independently rotated service token.

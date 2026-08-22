@@ -1,9 +1,10 @@
 import type { ProjectBundle } from "./bundle";
 
 export const ACCOUNT_DEVICE_STORAGE_KEY = "glassware.device-account.v1";
+export const ACCOUNT_EXTENSION_STORAGE_KEY = "glassware.extension-account.v1";
 const LEGACY_ACCOUNT_STORAGE_KEYS = ["imagestitch.device-account.v1", "imagestitch.account-preview.v1", "glassware.account-preview.v1"] as const;
 
-export type AccountClientMode = "service" | "device";
+export type AccountClientMode = "service" | "extension" | "device";
 export type SignInProvider = "wiplash";
 export type AiConnectionKind = "chatgpt_codex_plugin" | "openai_api";
 export type AiConnectionStatus = "connected" | "attention";
@@ -337,6 +338,7 @@ export interface AccountConnectionsClient {
   readonly mode: AccountClientMode;
   getSnapshot(): Promise<AccountSnapshot>;
   startSignIn(provider: SignInProvider, returnUrl: string): Promise<SignInAuthorization>;
+  startExtensionSignIn?(): Promise<AccountSnapshot>;
   signOut(): Promise<AccountSnapshot>;
   connectApiKey(apiKey: string, projectId?: string): Promise<AccountSnapshot>;
   startChatGptConnection(projectId?: string): Promise<ConnectionAuthorization>;
@@ -368,6 +370,28 @@ export interface StorageLike {
 export interface ServiceClientOptions {
   baseUrl: string;
   fetch?: typeof fetch;
+}
+
+export interface ExtensionChromeLike {
+  identity: {
+    getRedirectURL(path?: string): string;
+    launchWebAuthFlow(details: { url: string; interactive: boolean }): Promise<string>;
+  };
+  permissions: {
+    contains(permissions: { origins: string[] }): Promise<boolean>;
+    request(permissions: { origins: string[] }): Promise<boolean>;
+  };
+  storage: {
+    local: {
+      get(key: string): Promise<Record<string, unknown>>;
+      set(items: Record<string, unknown>): Promise<void>;
+      remove(key: string): Promise<void>;
+    };
+  };
+}
+
+export interface ExtensionClientOptions extends ServiceClientOptions {
+  chrome?: ExtensionChromeLike;
 }
 
 export const AI_CONNECTION_CATALOG: ReadonlyArray<{
@@ -1037,6 +1061,164 @@ export function createAccountServiceClient(options: ServiceClientOptions): Accou
         headers: { "idempotency-key": idempotencyKey },
         body: JSON.stringify({}),
       }), "billing.stripe.com");
+    },
+  };
+}
+
+interface ExtensionCredential {
+  type: "glassware_session";
+  accessToken: string;
+  expiresAt: string;
+}
+
+function emptyAccountSnapshot(): AccountSnapshot {
+  return { ...EMPTY_SNAPSHOT, connections: [], aiRuntime: { ...EMPTY_SNAPSHOT.aiRuntime }, billing: { ...EMPTY_SNAPSHOT.billing } };
+}
+
+function randomBase64Url(byteLength: number): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(byteLength));
+  let binary = "";
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function sha256Base64Url(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  let binary = "";
+  new Uint8Array(digest).forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function parseExtensionCredential(value: unknown): ExtensionCredential {
+  if (!isRecord(value) || value.type !== "glassware_session") {
+    throw new Error("Account service returned an invalid GlassWare extension session.");
+  }
+  const accessToken = requireString(value.accessToken, "extension session token");
+  const expiresAt = requireString(value.expiresAt, "extension session expiry");
+  if (!/^gw_account_[A-Za-z0-9_-]{43}$/.test(accessToken) || !Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= Date.now()) {
+    throw new Error("Account service returned an invalid GlassWare extension session.");
+  }
+  return { type: "glassware_session", accessToken, expiresAt };
+}
+
+function availableExtensionChrome(): ExtensionChromeLike | undefined {
+  const candidate = globalThis.chrome as unknown as ExtensionChromeLike | undefined;
+  return candidate?.identity && candidate.permissions && candidate.storage?.local ? candidate : undefined;
+}
+
+export function createExtensionAccountServiceClient(options: ExtensionClientOptions): AccountConnectionsClient {
+  const baseUrl = validateServiceBaseUrl(options.baseUrl);
+  const serviceUrl = new URL(baseUrl);
+  const fetcher = options.fetch ?? globalThis.fetch;
+  const selectedBrowser = options.chrome ?? availableExtensionChrome();
+  if (!selectedBrowser) throw new Error("This browser does not provide secure extension sign-in.");
+  const browser: ExtensionChromeLike = selectedBrowser;
+  const permissionOrigin = `${serviceUrl.origin}/*`;
+
+  async function clearCredential(): Promise<void> {
+    await browser.storage.local.remove(ACCOUNT_EXTENSION_STORAGE_KEY);
+  }
+
+  async function loadCredential(): Promise<ExtensionCredential | null> {
+    const stored = (await browser.storage.local.get(ACCOUNT_EXTENSION_STORAGE_KEY))[ACCOUNT_EXTENSION_STORAGE_KEY];
+    try {
+      const credential = parseExtensionCredential(stored);
+      return credential;
+    } catch {
+      if (stored !== undefined) await clearCredential();
+      return null;
+    }
+  }
+
+  async function authorizedFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+    const credential = await loadCredential();
+    const headers = new Headers(init.headers);
+    if (credential) headers.set("authorization", `Bearer ${credential.accessToken}`);
+    const response = await fetcher(input, { ...init, headers, credentials: "omit" });
+    if (response.status === 401 && credential) await clearCredential();
+    return response;
+  }
+
+  const service = createAccountServiceClient({ baseUrl, fetch: authorizedFetch });
+
+  async function requestJson(path: string, init: RequestInit): Promise<unknown> {
+    const headers = new Headers(init.headers);
+    headers.set("accept", "application/json");
+    headers.set("content-type", "application/json");
+    const response = await fetcher(`${baseUrl}${path}`, { ...init, headers, credentials: "omit" });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(parseErrorMessage(payload, `Account service request failed (${response.status}).`));
+    return payload;
+  }
+
+  return {
+    ...service,
+    mode: "extension",
+    async getSnapshot() {
+      if (!await loadCredential()) return emptyAccountSnapshot();
+      try {
+        return await service.getSnapshot();
+      } catch (cause) {
+        if (!await loadCredential()) return emptyAccountSnapshot();
+        throw cause;
+      }
+    },
+    async startSignIn() {
+      throw new Error("GlassWare extension sign-in must use the browser-owned Wiplash authorization window.");
+    },
+    async startExtensionSignIn() {
+      const hasPermission = await browser.permissions.contains({ origins: [permissionOrigin] });
+      if (!hasPermission && !await browser.permissions.request({ origins: [permissionOrigin] })) {
+        throw new Error("Allow access to auth.wiplash.ai so GlassWare can securely sign you in.");
+      }
+      const redirectUri = browser.identity.getRedirectURL();
+      const redirect = new URL(redirectUri);
+      if (redirect.protocol !== "https:" || !redirect.hostname.endsWith(".chromiumapp.org") || redirect.pathname !== "/") {
+        throw new Error("This browser returned an unsafe GlassWare sign-in callback.");
+      }
+      const state = randomBase64Url(32);
+      const codeVerifier = randomBase64Url(64);
+      const codeChallenge = await sha256Base64Url(codeVerifier);
+      const started = await requestJson("/v1/auth/extension-authorizations", {
+        method: "POST",
+        body: JSON.stringify({ redirectUri, state, codeChallenge }),
+      });
+      if (!isRecord(started) || started.status !== "waiting") throw new Error("Account service returned an invalid extension authorization.");
+      const authorizationId = requireString(started.authorizationId, "extension authorization id");
+      if (!/^[0-9a-f-]{36}$/.test(authorizationId)) throw new Error("Account service returned an invalid extension authorization.");
+      const authorizationUrl = new URL(validateAuthorizationUrl(requireString(started.authorizationUrl, "extension authorization URL")));
+      const expectedAuthorizationPath = `${serviceUrl.pathname.replace(/\/$/, "")}/extension/${authorizationId}`;
+      if (authorizationUrl.origin !== serviceUrl.origin || authorizationUrl.pathname !== expectedAuthorizationPath || authorizationUrl.searchParams.get("state") !== state) {
+        throw new Error("Account service returned an unsafe extension authorization URL.");
+      }
+      const callbackValue = await browser.identity.launchWebAuthFlow({ url: authorizationUrl.toString(), interactive: true });
+      const callback = new URL(callbackValue);
+      if (callback.origin !== redirect.origin || callback.pathname !== redirect.pathname || callback.username || callback.password || callback.hash
+        || callback.searchParams.size !== 2 || callback.searchParams.get("state") !== state) {
+        throw new Error("GlassWare could not verify the browser sign-in response.");
+      }
+      const code = callback.searchParams.get("code") ?? "";
+      if (!/^[A-Za-z0-9_-]{43}$/.test(code)) throw new Error("GlassWare received an invalid browser sign-in code.");
+      const exchanged = await requestJson(`/v1/auth/extension-authorizations/${encodeURIComponent(authorizationId)}/exchange`, {
+        method: "POST",
+        body: JSON.stringify({ code, codeVerifier, redirectUri }),
+      });
+      if (!isRecord(exchanged) || exchanged.status !== "connected" || exchanged.snapshot === undefined) {
+        throw new Error("Account service returned an invalid extension sign-in receipt.");
+      }
+      const credential = parseExtensionCredential(exchanged.credential);
+      const snapshot = parseAccountSnapshot(exchanged.snapshot);
+      if (!snapshot.account || snapshot.account.mode !== "authenticated") throw new Error("Account service did not return a signed-in GlassWare account.");
+      await browser.storage.local.set({ [ACCOUNT_EXTENSION_STORAGE_KEY]: credential });
+      return snapshot;
+    },
+    async signOut() {
+      try {
+        if (await loadCredential()) await service.signOut();
+      } finally {
+        await clearCredential();
+      }
+      return emptyAccountSnapshot();
     },
   };
 }

@@ -62,6 +62,7 @@ await writeFile(resolve(storeTarget, "release.json"), `${JSON.stringify({
   files: files.length,
   permissions: manifest.permissions,
   hostPermissions: manifest.host_permissions,
+  optionalHostPermissions: manifest.optional_host_permissions,
 }, null, 2)}\n`);
 
 console.log(`Packaged MV3 extension at ${target}`);

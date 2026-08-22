@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   ACCOUNT_DEVICE_STORAGE_KEY,
+  ACCOUNT_EXTENSION_STORAGE_KEY,
   createAccountServiceClient,
   createDeviceAccountClient,
+  createExtensionAccountServiceClient,
   DEFAULT_BILLING_SNAPSHOT,
   parseAccountSnapshot,
   validateAuthorizationUrl,
   validateServiceBaseUrl,
   type StorageLike,
+  type ExtensionChromeLike,
 } from "../src/lib/account-connections";
 
 class MemoryStorage implements StorageLike {
@@ -210,6 +213,101 @@ describe("account and AI connection clients", () => {
     expect(requests[10].init?.method).toBe("PUT");
     expect(new Headers(requests[10].init?.headers).get("x-glassware-csrf")).toBe("csrf-only");
     expect(requests[11].init?.method).toBe("DELETE");
+  });
+
+  it("uses browser identity, S256 PKCE, and an opaque revocable extension session", async () => {
+    const values = new Map<string, unknown>();
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const redirectUri = "https://ohjdhnopahlmbehnkjjnnjlgcdckjkic.chromiumapp.org/";
+    const authorizationId = "12345678-1234-4234-8234-123456789abc";
+    const code = "c".repeat(43);
+    let requestedPermission = false;
+    const extensionChrome: ExtensionChromeLike = {
+      identity: {
+        getRedirectURL: () => redirectUri,
+        async launchWebAuthFlow({ url, interactive }) {
+          expect(interactive).toBe(true);
+          const authorization = new URL(url);
+          return `${redirectUri}?code=${code}&state=${authorization.searchParams.get("state")}`;
+        },
+      },
+      permissions: {
+        async contains() { return false; },
+        async request({ origins }) {
+          requestedPermission = true;
+          expect(origins).toEqual(["https://auth.wiplash.ai/*"]);
+          return true;
+        },
+      },
+      storage: {
+        local: {
+          async get(key) { return { [key]: values.get(key) }; },
+          async set(items) { Object.entries(items).forEach(([key, value]) => values.set(key, value)); },
+          async remove(key) { values.delete(key); },
+        },
+      },
+    };
+    let codeChallenge = "";
+    const fetcher: typeof fetch = async (input, init) => {
+      const url = String(input);
+      requests.push({ url, init });
+      if (url.endsWith("/v1/auth/extension-authorizations")) {
+        const body = JSON.parse(String(init?.body));
+        codeChallenge = body.codeChallenge;
+        return Response.json({
+          status: "waiting",
+          authorizationId,
+          authorizationUrl: `https://auth.wiplash.ai/glassware/extension/${authorizationId}?state=${body.state}`,
+          expiresAt: new Date(Date.now() + 300_000).toISOString(),
+        }, { status: 201 });
+      }
+      if (url.endsWith(`/v1/auth/extension-authorizations/${authorizationId}/exchange`)) {
+        const body = JSON.parse(String(init?.body));
+        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body.codeVerifier));
+        const encoded = btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+        expect(encoded).toBe(codeChallenge);
+        expect(body).toMatchObject({ code, redirectUri });
+        return Response.json({
+          status: "connected",
+          credential: {
+            type: "glassware_session",
+            accessToken: `gw_account_${"t".repeat(43)}`,
+            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60_000).toISOString(),
+          },
+          snapshot: { ...authenticatedSnapshot, csrfToken: undefined },
+        });
+      }
+      if (url.endsWith("/v1/account")) return Response.json({ ...authenticatedSnapshot, csrfToken: undefined });
+      if (url.endsWith("/v1/auth/logout")) return Response.json({
+        account: null,
+        connections: [],
+        syncEnabled: false,
+        aiRuntime: { available: true, message: "AI workspace is ready" },
+      });
+      throw new Error(`Unexpected request: ${input}`);
+    };
+    const client = createExtensionAccountServiceClient({
+      baseUrl: "https://auth.wiplash.ai/glassware",
+      fetch: fetcher,
+      chrome: extensionChrome,
+    });
+
+    expect(await client.getSnapshot()).toMatchObject({ account: null });
+    expect(requests).toHaveLength(0);
+    const connected = await client.startExtensionSignIn?.();
+    expect(requestedPermission).toBe(true);
+    expect(connected?.account).toMatchObject({ email: "mom@example.com", mode: "authenticated" });
+    expect(values.get(ACCOUNT_EXTENSION_STORAGE_KEY)).toMatchObject({ accessToken: expect.stringMatching(/^gw_account_/) });
+    expect(new Headers(requests[0].init?.headers).has("authorization")).toBe(false);
+    expect(new Headers(requests[1].init?.headers).has("authorization")).toBe(false);
+
+    expect((await client.getSnapshot()).account?.email).toBe("mom@example.com");
+    expect(new Headers(requests[2].init?.headers).get("authorization")).toBe(`Bearer gw_account_${"t".repeat(43)}`);
+    expect(requests[2].init?.credentials).toBe("omit");
+
+    await client.signOut();
+    expect(new Headers(requests[3].init?.headers).get("authorization")).toMatch(/^Bearer gw_account_/);
+    expect(values.has(ACCOUNT_EXTENSION_STORAGE_KEY)).toBe(false);
   });
 
   it("rejects unsafe service and authorization URLs", () => {

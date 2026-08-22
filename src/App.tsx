@@ -202,7 +202,6 @@ import { aiQualityFeedback, assessAiQuality } from "./lib/ai-quality";
 import { buildImagePdf, type PdfImagePage } from "./lib/pdf-export";
 import { renderRegionEditMask, renderRegionEditSource } from "./lib/region-edit";
 import type { RegionEditRequest } from "./components/RegionEditModal";
-import { hostedGlassWareUrl, isExtensionSurface, type HostedEditorIntent } from "./lib/runtime-surface";
 
 const StudioPanel = lazy(() => import("./components/StudioPanel").then((module) => ({ default: module.StudioPanel })));
 const AiConnectionsPanel = lazy(() => import("./components/AiConnectionsPanel").then((module) => ({ default: module.AiConnectionsPanel })));
@@ -374,7 +373,6 @@ function Editor({
   initialProject: GlassWareProject;
   replaceProject: (project: GlassWareProject) => void;
 }) {
-  const extensionSurface = isExtensionSurface();
   const canvasElement = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
   const layerRef = useRef<Konva.Layer | null>(null);
@@ -458,25 +456,6 @@ function Editor({
   const viewScale = fitScale * zoom;
   const stageWidth = Math.round(project.canvas.width * viewScale);
   const stageHeight = Math.round(project.canvas.height * viewScale);
-
-  function openHostedEditor(intent: HostedEditorIntent) {
-    const opened = window.open(hostedGlassWareUrl(intent), "_blank", "noopener,noreferrer");
-    setMessage(opened
-      ? `${intent === "ai" ? "AI" : "Account"} opened securely in the GlassWare web app. Your local extension project stays on this device.`
-      : "Allow pop-ups for GlassWare, then try again.");
-  }
-
-  useEffect(() => {
-    if (extensionSurface) return;
-    const url = new URL(window.location.href);
-    if (url.searchParams.get("from") !== "extension") return;
-    const intent = url.searchParams.get("intent");
-    if (intent === "account") setSignInOpen(true);
-    if (intent === "ai") setAiWidgetOpen(true);
-    url.searchParams.delete("from");
-    url.searchParams.delete("intent");
-    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
-  }, [extensionSurface]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -3482,8 +3461,8 @@ function Editor({
           <button className="icon-button" aria-label="Undo" title="Undo (Ctrl/⌘+Z)" disabled={!canUndo(project)} onClick={undo}><Undo2 size={18} /></button>
           <button className="icon-button" aria-label="Redo" title="Redo (Ctrl/⌘+Shift+Z)" disabled={!canRedo(project) && !findLatestRedoableAiRevision(project)} onClick={redo}><Redo2 size={18} /></button>
           <button className="save-button" title={accountConnections.snapshot.syncEnabled && accountConnections.snapshot.billing.cloudAccess === "read_write" ? "Save to cloud" : "Save on this device"} onClick={() => void persist(projectRef.current, true)} disabled={saveState === "saving" || cloudSaveState === "syncing"}><Save size={16} /> Save</button>
-          <button className="ai-button" title={extensionSurface ? "Continue securely in the GlassWare web app" : "Ask GlassWare AI"} onClick={() => extensionSurface ? openHostedEditor("ai") : setAiWidgetOpen(true)}><Sparkles size={17} /> Ask AI</button>
-          <button className="account-button" title={extensionSurface ? "Continue securely in the GlassWare web app" : "Open account"} onClick={() => extensionSurface ? openHostedEditor("account") : accountConnections.snapshot.account ? setActiveTool("Account") : setSignInOpen(true)}><UserRound size={17} /> {accountConnections.snapshot.account?.displayName ?? "Sign in"}</button>
+          <button className="ai-button" title="Ask GlassWare AI" onClick={() => setAiWidgetOpen(true)}><Sparkles size={17} /> Ask AI</button>
+          <button className="account-button" title="Open account" onClick={() => accountConnections.snapshot.account ? setActiveTool("Account") : setSignInOpen(true)}><UserRound size={17} /> {accountConnections.snapshot.account?.displayName ?? "Sign in"}</button>
           <button className="export-button" onClick={() => void openExport("png")}><Download size={17} /> Export</button>
         </div>
       </header>

@@ -31,16 +31,17 @@ and compare its SHA-256 digest with the release receipt.
 ## Manual BrowserOS checklist
 
 1. Confirm GlassWare is enabled at `chrome://extensions` and version is 1.0.0.
-2. Open an ordinary HTTPS page and click the GlassWare toolbar icon.
-3. Click **Capture visible page** and confirm the packaged editor opens once
-   with the screenshot selected.
+2. Click the GlassWare toolbar icon and confirm the packaged editor opens or
+   focuses directly, with no popup.
+3. Open an ordinary HTTPS page, right-click, choose **Capture page with
+   GlassWare**, and confirm the packaged editor focuses with the screenshot
+   selected.
 4. Save, rename, reload, and reopen the project from **Files**.
 5. Export PNG and a portable GlassWare bundle; re-import the bundle.
-6. Right-click a normal page image, choose **Send image to GlassWare**, and
-   confirm the source receipt appears in the imported image details.
-7. Click **Ask AI** and **Sign in** from the extension editor. Confirm each opens
-   `https://labs.wiplash.ai/glassware/app.html` and does not request credentials
-   inside the extension origin.
+6. Click **Ask AI** and confirm the movable native chat opens without navigating
+   away from `app/app.html`.
+7. Click **Sign in**, complete the browser-owned Wiplash.ai window, and confirm
+   the native account and AI controls remain in the extension editor.
 8. Inspect the extension service worker console and editor console for errors.
 
 ## Store materials

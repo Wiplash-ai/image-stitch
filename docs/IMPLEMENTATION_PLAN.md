@@ -139,21 +139,22 @@ user action and disclosed data scope.
   document every host permission.
 - [x] Add production raster icons, deterministic source-map-free ZIP packaging,
   a checksum receipt, and release-package verification.
-- [x] Keep capture, local editing, persistence, and export inside the packaged
-  extension while handing account, cloud, billing, and AI actions to the HTTPS
-  GlassWare application.
+- [x] Keep capture, local editing, persistence, account UI, AI chat, and export
+  inside the packaged extension, backed by the same constrained HTTPS services
+  as the web app.
 - [x] Prepare Chrome/Edge listing copy, privacy disclosures, reviewer notes,
   screenshots, and promotional images from the actual packaged editor.
 - [x] Add isolated Chromium smoke coverage for packaged capture import, local
   recovery, and PNG export, plus pull-request CI.
 - [x] Install the unpacked 1.0 package in BrowserOS without replacing the
   existing profile or its other extensions.
-- [ ] Complete the manual toolbar and context-menu capture checklist, merge the
+- [ ] Complete the manual toolbar-open and context-menu capture checklist, merge the
   release pull request, tag the approved build, and submit it to each store.
 
-Exit gate: a human can capture a real page from the toolbar and context menu,
-edit and recover the project, export the result, and confirm the store listing
-accurately describes every permission and network boundary.
+Exit gate: a human can open the editor from the toolbar, capture a real page
+from the context menu, edit and recover the project, export the result, and
+confirm the store listing accurately describes every permission and network
+boundary.
 
 ## Near-term backlog
 
@@ -169,7 +170,7 @@ accurately describes every permission and network boundary.
 
 - Unit tests for project operations, migrations, plan validation, and storage.
 - Schema fixture validation for every committed public example.
-- Browser smoke tests at 1440×900, 1280×800, and extension popup dimensions.
+- Browser smoke tests at 1440×900 and 1280×800, plus the packaged extension tab.
 - Export pixel checks for preset dimensions, transparency, fonts, and clipping.
 - Recovery tests that close/reopen during import, editing, and export.
 - Manual usability scripts performed by a non-developer design partner.

@@ -160,10 +160,12 @@ store ZIP, checksum, and release receipt are generated under
 `chrome://extensions` with Developer mode enabled; upload the ZIP itself to the
 Chrome or Edge submission dashboard.
 
-The extension keeps capture, editing, local persistence, and export inside the
-packaged origin. Account, cloud, billing, and AI actions continue in the HTTPS
-GlassWare web app so privileged extension code does not interpret remote AI
-commands.
+The toolbar opens the packaged editor directly; visible-page capture is an
+explicit page context-menu action. Editing, local persistence, account UI,
+cloud controls, AI chat, and export remain in that editor tab. Extension
+sign-in uses Chromium's browser-owned identity window with S256 PKCE and stores
+only a revocable GlassWare session token. Wiplash/Keycloak and provider tokens
+never enter extension storage.
 
 ## Plans and decisions
 

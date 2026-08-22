@@ -10,7 +10,10 @@
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
   },
-  "permissions": ["activeTab", "contextMenus", "storage"],
+  "permissions": ["activeTab", "contextMenus", "identity", "storage"],
+  "optional_host_permissions": [
+    "https://auth.wiplash.ai/*"
+  ],
   "host_permissions": [
     "https://api.openverse.org/*",
     "https://fonts.googleapis.com/*",
@@ -21,11 +24,10 @@
     "extension_pages": "script-src 'self'; object-src 'self'"
   },
   "action": {
-    "default_title": "Capture with GlassWare",
+    "default_title": "Open GlassWare",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png"
-    },
-    "default_popup": "popup.html"
+    }
   }
 }

@@ -39,6 +39,7 @@ try {
   const installed = await browserSession.send("Extensions.getExtensions");
   const extension = installed.extensions.find((item) => item.name === manifest.name && item.version === manifest.version);
   assert(extension?.enabled, "GlassWare was not enabled in the isolated Chromium profile");
+  assert(!manifest.action?.default_popup, "the GlassWare toolbar action should open the editor directly");
 
   const initialTargets = await browserSession.send("Target.getTargets");
   const initialPage = initialTargets.targetInfos.find((target) => target.type === "page");
@@ -52,11 +53,11 @@ try {
   await source.bringToFront();
   const capture = await source.screenshot({ type: "png" });
   await browserSession.send("Browser.createTab", {
-    url: `chrome-extension://${extension.id}/popup.html`,
+    url: `chrome-extension://${extension.id}/app/privacy.html`,
     browserContextId: initialPage.browserContextId,
   });
-  const popup = await waitForPage(context, (page) => page.url() === `chrome-extension://${extension.id}/popup.html`);
-  await popup.evaluate(async (values) => {
+  const extensionPage = await waitForPage(context, (page) => page.url() === `chrome-extension://${extension.id}/app/privacy.html`);
+  await extensionPage.evaluate(async (values) => {
     await chrome.storage.local.set(values);
   }, {
       "glassware.pendingCapture.v1": {
@@ -65,15 +66,28 @@ try {
         capturedAt: new Date().toISOString(),
       },
   });
-  await popup.close();
-  await browserSession.send("Browser.createTab", {
-    url: `chrome-extension://${extension.id}/app/app.html`,
-    browserContextId: initialPage.browserContextId,
-  });
+  await extensionPage.close();
+  const serviceWorker = context.serviceWorkers()[0] ?? await context.waitForEvent("serviceworker");
+  await serviceWorker.evaluate(async () => { await openEditor(); });
 
   const editor = await waitForPage(context, (page) => page.url() === `chrome-extension://${extension.id}/app/app.html`);
+  await serviceWorker.evaluate(async () => { await openEditor(); });
+  assert(context.pages().filter((page) => page.url() === editor.url()).length === 1, "the toolbar action duplicated the main editor tab");
   await editor.locator(".workbench").waitFor();
   await editor.getByText(/Revision 2/).waitFor();
+  const bodyTypography = await editor.locator("body").evaluate((body) => {
+    const style = getComputedStyle(body);
+    return { fontSize: style.fontSize, fontFamily: style.fontFamily };
+  });
+  assert(bodyTypography.fontSize === "16px" && /Inter/.test(bodyTypography.fontFamily), "the packaged editor did not retain GlassWare typography");
+  await editor.locator(".ai-button").evaluate((button) => button.click());
+  await editor.locator(".ai-floating-widget").waitFor();
+  assert(editor.url() === `chrome-extension://${extension.id}/app/app.html`, "Ask AI navigated away from the packaged editor");
+  await editor.getByRole("button", { name: "Close Ask AI", exact: true }).click();
+  await editor.locator(".account-button").evaluate((button) => button.click());
+  await editor.getByRole("dialog", { name: "Sign in or create an account" }).waitFor();
+  assert(editor.url() === `chrome-extension://${extension.id}/app/app.html`, "Sign in navigated away from the packaged editor");
+  await editor.getByRole("button", { name: "Close sign in" }).click();
   await editor.getByRole("button", { name: "Layers", exact: true }).click();
   await editor.getByText("Browser capture.png", { exact: true }).first().waitFor();
   const storage = await editor.evaluate(async () => chrome.storage.local.get("glassware.pendingCapture.v1"));
@@ -98,7 +112,7 @@ try {
   });
   assert(Buffer.from(firstChunk).subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])), "the extension export was not a PNG");
 
-  console.log(`GlassWare extension smoke passed in isolated Chromium: ${extension.id}, packaged pending-capture import, local restore, and PNG export.`);
+  console.log(`GlassWare extension smoke passed in isolated Chromium: ${extension.id}, direct editor open/focus, native app controls, packaged pending-capture import, local restore, and PNG export.`);
 } finally {
   await context?.close();
   await new Promise((resolvePromise) => server.close(resolvePromise));

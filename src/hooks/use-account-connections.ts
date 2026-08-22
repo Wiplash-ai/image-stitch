@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createAccountServiceClient,
   createDeviceAccountClient,
+  createExtensionAccountServiceClient,
   DEFAULT_BILLING_SNAPSHOT,
   type AccountSnapshot,
   type AiDeviceAuthorization,
@@ -58,7 +59,7 @@ function defaultAccountServiceUrl(): string {
 }
 
 export interface AccountConnectionsModel {
-  mode: "service" | "device";
+  mode: "service" | "extension" | "device";
   cloudStatus: "checking" | "available" | "unavailable";
   cloudMessage: string;
   snapshot: AccountSnapshot;
@@ -95,15 +96,11 @@ export function useAccountConnections(): AccountConnectionsModel {
     ?? import.meta.env.VITE_IMAGESTITCH_ACCOUNT_API_URL?.trim()
     ?? defaultAccountServiceUrl();
   const serviceSetup = useMemo(() => {
-    if (extensionSurface) {
-      return {
-        client: null,
-        configurationError: "Sign-in, cloud storage, and AI continue securely in the GlassWare web app.",
-      };
-    }
     try {
       return {
-        client: createAccountServiceClient({ baseUrl: configuredBaseUrl }),
+        client: extensionSurface
+          ? createExtensionAccountServiceClient({ baseUrl: configuredBaseUrl })
+          : createAccountServiceClient({ baseUrl: configuredBaseUrl }),
         configurationError: "",
       };
     } catch (cause) {
@@ -142,7 +139,7 @@ export function useAccountConnections(): AccountConnectionsModel {
       try {
         const serviceSnapshot = await serviceClient.getSnapshot();
         if (!cancelled) {
-          setSnapshot(serviceSnapshot.account
+          setSnapshot(serviceSnapshot.account || extensionSurface
             ? serviceSnapshot
             : { ...deviceSnapshot, aiRuntime: serviceSnapshot.aiRuntime });
           setCloudStatus("available");
@@ -161,7 +158,7 @@ export function useAccountConnections(): AccountConnectionsModel {
     return () => {
       cancelled = true;
     };
-  }, [deviceClient, serviceClient, serviceSetup.configurationError]);
+  }, [deviceClient, extensionSurface, serviceClient, serviceSetup.configurationError]);
 
   useEffect(() => {
     if (!serviceClient || !deviceAuthorization || !["starting", "waiting"].includes(deviceAuthorization.status)) return;
@@ -230,6 +227,22 @@ export function useAccountConnections(): AccountConnectionsModel {
       setError(serviceSetup.configurationError || "OAuth sign-in is not configured.");
       return;
     }
+    if (extensionSurface) {
+      if (!serviceClient.startExtensionSignIn) {
+        setError("This browser does not provide secure extension sign-in.");
+        return;
+      }
+      const snapshot = await run(`sign-in-${provider}`, () => serviceClient.startExtensionSignIn!(), setSnapshot);
+      if (!snapshot) {
+        setCloudStatus("unavailable");
+        setCloudMessage("Wiplash sign-in could not be completed.");
+        return;
+      }
+      setCloudStatus("available");
+      setCloudMessage("");
+      setNotice("Signed in with Wiplash.ai. Cloud and AI tools are ready in this extension.");
+      return;
+    }
     const authorization = await run(`sign-in-${provider}`, () => serviceClient.startSignIn(provider, currentReturnUrl()));
     if (!authorization) {
       setCloudStatus("unavailable");
@@ -238,7 +251,7 @@ export function useAccountConnections(): AccountConnectionsModel {
     }
     setCloudStatus("available");
     window.location.assign(authorization.authorizationUrl);
-  }, [run, serviceClient, serviceSetup.configurationError]);
+  }, [extensionSurface, run, serviceClient, serviceSetup.configurationError]);
 
   const connectApiKey = useCallback(async (apiKey: string, projectId: string) => {
     if (!serviceClient || snapshot.account?.mode !== "authenticated") {
@@ -456,7 +469,7 @@ export function useAccountConnections(): AccountConnectionsModel {
   const deleteCloudProject = useCallback((projectId: string) => requireCloudAiHistory().deleteProject(projectId), [requireCloudAiHistory]);
 
   return {
-    mode: snapshot.account?.mode === "authenticated" ? "service" : "device",
+    mode: snapshot.account?.mode === "authenticated" ? serviceClient?.mode ?? "service" : extensionSurface ? "extension" : "device",
     cloudStatus,
     cloudMessage,
     snapshot,

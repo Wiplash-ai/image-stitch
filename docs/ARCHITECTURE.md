@@ -111,10 +111,9 @@ and every plan binds to an immutable base revision.
 - **Status:** Accepted.
 - **Decision:** Package the production web build inside the MV3 extension. The
   extension adds capture and page integration; the editor remains one codebase.
-  The store capability profile keeps capture, local editing, persistence, and
-  export in the extension origin. Account, cloud, billing, and AI controls hand
-  off to the HTTPS web editor so remotely produced AI decisions are not
-  interpreted inside the privileged MV3 origin.
+  The store capability profile keeps capture, local editing, persistence,
+  account UI, AI chat, and export in the extension origin. The packaged client
+  calls the same constrained HTTPS account and AI APIs as the web build.
 - **Consequences:** Store packages are larger, but behavior and schemas do not
   drift between surfaces.
 
@@ -187,15 +186,17 @@ and every plan binds to an immutable base revision.
   device-profile data for migration but creates no new pseudo-accounts. Sign-in
   uses the shared Wiplash realm through an HTTPS private-service adapter; the
   realm owns Google, GitHub, and GitLab provider selection and can reuse an
-  existing Wiplash SSO session. Production sessions remain app-specific
-  HTTP-only cookies, mutating requests use CSRF receipts, and connection
-  responses contain opaque identifiers rather than provider credentials.
+  existing Wiplash SSO session. Web sessions remain app-specific HTTP-only
+  cookies and mutating web requests use CSRF receipts. The extension uses a
+  browser-owned identity window, S256 PKCE, and a revocable app-specific bearer
+  session; connection responses contain opaque identifiers rather than
+  provider credentials.
 - **Consequences:** Old local data remains readable, but device mode does not
   claim cloud authentication and cannot fake sync or provider authorization.
-  Extension identity remains intentionally outside the privileged package. A
-  direct extension device-link may be added later only if it can keep narrow
-  host permissions and the same account isolation; the current release opens
-  the authenticated HTTPS editor instead.
+  The extension requests its narrow `auth.wiplash.ai` host permission only when
+  the user signs in. Its stored token identifies only a GlassWare account
+  session; provider and Keycloak tokens remain server-side. Server records are
+  encrypted, keyed by token hashes, restart-safe, expiring, and revocable.
 
 ### ADR-007: Openverse adapter for openly licensed image search
 

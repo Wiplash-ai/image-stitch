@@ -10,14 +10,15 @@ Edge Add-ons. Firefox is a separate compatibility and consent review.
 ## Outcome
 
 Ship the real GlassWare editor as a small, trustworthy browser extension. A
-user can capture the visible page, continue in the packaged local editor,
-recover the project after a restart, and export it without an account. Account,
-cloud, billing, and AI actions continue in the HTTPS GlassWare app instead of
-running remote workflows inside the privileged extension origin.
+user can open the packaged editor directly, capture the visible page from an
+explicit context-menu command, recover the project after a restart, and export
+it without an account. Optional account, cloud, billing, and AI workflows stay
+inside the packaged editor and use the constrained HTTPS GlassWare service.
 
 ## Release foundation completed
 
-- Minimum MV3 permissions: `activeTab`, `contextMenus`, and `storage`.
+- Reviewed MV3 permissions: `activeTab`, `contextMenus`, `identity`, and
+  `storage`, with optional `auth.wiplash.ai` access requested at sign-in.
 - Narrow host permissions for Openverse image search and Google Fonts only.
 - 16, 32, 48, and 128 pixel production icons and an explicit extension CSP.
 - Deterministic source-map-free Chromium ZIP, SHA-256 checksum, and machine-
@@ -31,15 +32,14 @@ running remote workflows inside the privileged extension origin.
 - Isolated Chromium smoke coverage for packaged pending-capture import, local
   project persistence, reload recovery, and PNG export.
 - BrowserOS installation alongside the user's existing extensions and restored
-  tabs, plus verification of the account/AI HTTPS handoff.
+  tabs, plus native extension account/AI verification.
 
 ## Final release gates
 
-1. Manually capture a normal HTTPS page from the BrowserOS toolbar button.
-2. Manually use **Send image to GlassWare** on a page image and confirm its
-   source URL is imported only after the user gesture.
-3. Edit both captured projects, reload each, and export PNG and portable bundle
-   files.
+1. Confirm the BrowserOS toolbar icon opens or focuses the full editor directly.
+2. Manually capture a normal HTTPS page from **Capture page with GlassWare** in
+   the context menu.
+3. Edit the captured project, reload it, and export PNG and portable bundle files.
 4. Review every screenshot, listing claim, privacy disclosure, and support URL
    as a user and as a store reviewer.
 5. Merge the release pull request only after CI and the manual checklist pass.
@@ -52,15 +52,15 @@ local installation do not submit or publish GlassWare.
 
 ## Acceptance criteria
 
-- The toolbar capture arrives once in the bundled editor and does not reappear
-  after it is consumed.
-- A context-menu image import retains its source receipt and never reads other
-  tabs without a direct user action.
+- The toolbar opens one bundled editor tab and focuses it on later clicks.
+- A context-menu page capture arrives once and never reads other tabs without a
+  direct user action.
 - A locally saved project survives BrowserOS and machine restarts.
 - PNG export has the requested dimensions and a valid PNG signature.
 - No provider credential, session cookie, artwork asset, or AI conversation is
   written to extension storage or included in the store ZIP.
-- Account and AI controls open only the HTTPS GlassWare app.
+- Account and AI controls stay in the packaged editor; sign-in uses a
+  browser-owned PKCE window and only an opaque GlassWare session is stored.
 - The submitted listing describes all data use and permissions without broader
   claims than the package implements.
 
